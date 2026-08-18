@@ -1,0 +1,6 @@
+.reasonix/
+__pycache__/
+*/__pycache__/
+frontend/node_modules/
+frontend/dist/
+reasonix.toml
