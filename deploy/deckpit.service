@@ -1,5 +1,5 @@
 [Unit]
-Description=Dev Dashboard
+Description=Deckpit — Linux 开发者工作台
 After=default.target
 
 [Service]

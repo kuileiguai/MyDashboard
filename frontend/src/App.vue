@@ -11,7 +11,7 @@
             <el-icon :size="18"><Monitor /></el-icon>
           </div>
           <div v-show="!isCollapsed" class="brand-text">
-            <span class="sidebar-title">Dev Dash</span>
+            <span class="sidebar-title">Deckpit</span>
             <span class="sidebar-sub">管理后台</span>
           </div>
         </div>

@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="Dev Dashboard", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Deckpit", version="1.0.0", lifespan=lifespan)
 
 # CORS —— 开发时允许 5173
 app.add_middleware(

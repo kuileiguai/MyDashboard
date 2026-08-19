@@ -98,7 +98,7 @@ linux-dashboard/
 │   ├── dev.sh                   # 同时起前后端（开发）
 │   └── start.sh                 # 生产启动（uvicorn 托管前端 dist）
 ├── deploy/
-│   └── dev-dash.service         # systemd user unit
+│   └── deckpit.service         # systemd user unit
 └── README.md
 ```
 
@@ -279,11 +279,11 @@ recent_files(id, path, opened_at)             -- M2-F9
 
 **生产模式**：前端 `vite build` → 后端 FastAPI 静态托管 `dist/`，只跑 8080 一个端口。
 
-**systemd user service**（`deploy/dev-dash.service`）：
+**systemd user service**（`deploy/deckpit.service`）：
 
 ```ini
 [Unit]
-Description=Dev Dashboard
+Description=Deckpit
 After=default.target
 
 [Service]
@@ -296,7 +296,7 @@ RestartSec=3
 WantedBy=default.target
 ```
 
-启用：`systemctl --user enable --now dev-dash`；日志：`journalctl --user -u dev-dash -f`。
+启用：`systemctl --user enable --now deckpit`；日志：`journalctl --user -u deckpit -f`。
 
 ---
 
