@@ -7,6 +7,7 @@
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -183,43 +184,141 @@ def close_window(win_id: str) -> bool:
         return False
 
 
+def _get_geometry(win_id: str) -> dict:
+    """获取窗口几何（X/Y/WIDTH/HEIGHT）"""
+    try:
+        proc = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", win_id],
+            capture_output=True, text=True, timeout=3,
+        )
+        geo = {}
+        for line in proc.stdout.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                geo[k] = v.strip()
+        return geo
+    except Exception:
+        return {}
+
+
+def _activate(win_id: str) -> bool:
+    """激活窗口并确保 X 输入焦点落到该窗口（发送命令前调用）"""
+    try:
+        subprocess.run(["xdotool", "windowactivate", "--sync", win_id], timeout=3)
+        # GNOME/mutter 下 windowfocus 常被 WM 焦点管理覆盖，需点击窗口标题栏让 WM 授予输入焦点
+        # 注意：mousemove/click 不能用 --sync（远程桌面下会卡住等待 X 事件）
+        geo = _get_geometry(win_id)
+        cx = int(geo.get("X", 0) or 0) + int(geo.get("WIDTH", 800) or 800) // 2
+        cy = int(geo.get("Y", 0) or 0) + 15  # 标题栏区域
+        subprocess.run(["xdotool", "mousemove", str(cx), str(cy)], timeout=2)
+        subprocess.run(["xdotool", "click", "1"], timeout=2)
+        subprocess.run(["xdotool", "windowfocus", "--sync", win_id], timeout=2)
+        # 轮询等待输入焦点落到目标窗口（mutter 焦点切换是异步的）
+        target_dec = str(int(win_id, 16)) if win_id.lower().startswith("0x") else str(int(win_id))
+        for _ in range(10):
+            cur = subprocess.run(
+                ["xdotool", "getwindowfocus"], capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+            if cur == target_dec:
+                return True
+            time.sleep(0.2)
+        return False
+    except Exception:
+        return False
+
+
 def send_keys_to_window(win_id: str, text: str) -> bool:
-    """向终端窗口发送按键/文本"""
+    """向终端窗口发送按键/文本（XTEST 真实按键，GTK 终端可靠；
+    不用 --window，因为 XSendEvent 合成事件会被 GTK 应用忽略）"""
     try:
-        # type 分两种：普通文本用 "type"，特殊键用 "key"
-        # 先聚焦
-        subprocess.run(["xdotool", "windowactivate", win_id], timeout=2)
-        # 发送文本
-        subprocess.run(["xdotool", "type", "--window", win_id, text], timeout=3)
+        if not _activate(win_id):
+            return False
+        subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "20", text], timeout=8)
         return True
     except Exception:
         return False
 
 
-def send_command_to_window(win_id: str, command: str) -> bool:
-    """向终端窗口发送命令并回车"""
+def send_command_to_window(win_id: str, command: str, press_enter: bool = True) -> bool:
+    """向终端窗口发送命令（XTEST 真实按键 + --clearmodifiers）。
+    press_enter=False 时只输入不回车（小屏点击场景，由用户自行确认执行）。"""
     try:
-        subprocess.run(["xdotool", "windowactivate", win_id], timeout=2)
-        subprocess.run(["xdotool", "type", "--window", win_id, command], timeout=3)
-        subprocess.run(["xdotool", "key", "--window", win_id, "Return"], timeout=2)
+        if not _activate(win_id):
+            return False
+        subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "20", command], timeout=8)
+        if press_enter:
+            subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], timeout=2)
         return True
     except Exception:
         return False
 
 
-def send_command_to_active_window(command: str) -> bool:
-    """向当前活动窗口发送命令并回车（小屏"点即执行"的落点）"""
+def _get_window_title(win_id: str) -> str:
+    """获取窗口标题"""
+    try:
+        proc = subprocess.run(
+            ["xdotool", "getwindowname", win_id],
+            capture_output=True, text=True, timeout=3,
+        )
+        return proc.stdout.strip()
+    except Exception:
+        return ""
+
+
+# 明显非终端的窗口标记（排除误判，如编辑器/浏览器标题含路径或 @）
+_NON_TERMINAL_MARKERS = [
+    "gedit", "libreoffice", "visual studio code", " - code", "sublime", "pycharm",
+    "intellij", "idea", "webstorm", "eclipse", "vim -", "emacs", "firefox",
+    "chromium", "chrome", "msedge", "edge", "reasonix", "dbeaver", "explorer",
+]
+
+
+def _window_is_terminal(win_id: str) -> bool:
+    """判断指定窗口是否为终端窗口"""
+    title = _get_window_title(win_id).lower()
+    if not title:
+        return False
+    for m in _NON_TERMINAL_MARKERS:
+        if m in title:
+            return False
+    return _looks_like_terminal(title, "")
+
+
+def _get_stacking_windows() -> list[str]:
+    """按 X 堆栈顺序（自底向上）返回所有窗口 id 列表，用于找"最近活动"窗口"""
+    try:
+        proc = subprocess.run(
+            ["xprop", "-root", "_NET_CLIENT_LIST_STACKING"],
+            capture_output=True, text=True, timeout=3,
+        )
+        # 输出形如: _NET_CLIENT_LIST_STACKING(WINDOW): window id # 0x1000003, 0x2000005, ...
+        m = re.search(r"window id # (.*)", proc.stdout)
+        if m:
+            return [x.strip() for x in m.group(1).split(",") if x.strip()]
+    except Exception:
+        pass
+    return []
+
+
+def send_command_to_active_window(command: str, press_enter: bool = True) -> bool:
+    """发送命令到最近活动的终端窗口（小屏"点即执行"）。
+    1) 当前活动窗口是终端 → 直接发送；
+    2) 否则从 X 窗口堆栈顶部向下找最近活动的终端窗口发送。"""
     try:
         proc = subprocess.run(
             ["xdotool", "getactivewindow"],
             capture_output=True, text=True, timeout=3,
         )
         win_id = proc.stdout.strip()
-        if not win_id:
-            return False
-        return send_command_to_window(win_id, command)
+        if win_id and _window_is_terminal(win_id):
+            return send_command_to_window(win_id, command, press_enter)
+        # 活动窗口不是终端（如浏览器/编辑器）：从堆栈顶部向下找最近活动的终端
+        for wid in reversed(_get_stacking_windows()):
+            if _window_is_terminal(wid):
+                return send_command_to_window(wid, command, press_enter)
     except Exception:
-        return False
+        pass
+    return False
 
 
 def _fallback_xdotool() -> list[dict]:

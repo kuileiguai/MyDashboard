@@ -106,8 +106,8 @@ async def external_send(win_id: str, body: SendCommand):
 
 @router.post("/active/send")
 async def active_send(body: SendCommand):
-    """向当前活动终端窗口发送命令并回车（悬浮小屏"点即执行"）"""
-    ok = send_command_to_active_window(body.command)
+    """向最近活动的终端窗口发送命令（不自动回车，由用户自行确认执行；悬浮小屏"点即输入"）"""
+    ok = send_command_to_active_window(body.command, press_enter=False)
     return {"ok": ok}
 
 

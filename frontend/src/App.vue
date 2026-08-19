@@ -22,6 +22,7 @@
           <el-menu-item index="/logs"><el-icon><Tickets /></el-icon><span>日志查看</span></el-menu-item>
           <el-menu-item index="/env"><el-icon><Setting /></el-icon><span>环境管理</span></el-menu-item>
           <el-menu-item index="/ssh"><el-icon><Link /></el-icon><span>SSH 管理</span></el-menu-item>
+          <el-menu-item index="/docker"><el-icon><Box /></el-icon><span>Docker 管理</span></el-menu-item>
         </el-menu>
 
         <div class="sidebar-footer">
@@ -92,6 +93,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/logs')) return '/logs'
   if (path.startsWith('/env')) return '/env'
   if (path.startsWith('/ssh')) return '/ssh'
+  if (path.startsWith('/docker')) return '/docker'
   return '/'
 })
 

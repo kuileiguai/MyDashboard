@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
-from routers import commands, files, ports, terminal, system, logs, env, ssh, dashboard
+from routers import commands, files, ports, terminal, system, logs, env, ssh, dashboard, docker
 from ws import terminal_ws, monitor_ws, log_ws
 
 
@@ -70,6 +70,7 @@ app.include_router(logs.router, prefix="/api/logs", tags=["M6-Logs"])
 app.include_router(env.router, prefix="/api/env", tags=["M7-Env"])
 app.include_router(ssh.router, prefix="/api/ssh", tags=["M8-SSH"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["M9-Dashboard"])
+app.include_router(docker.router, prefix="/api/docker", tags=["M10-Docker"])
 
 # WebSocket 路由
 app.websocket("/ws/terminal/{session_id}")(terminal_ws.websocket_endpoint)

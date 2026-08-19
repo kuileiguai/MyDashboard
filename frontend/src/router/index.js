@@ -10,6 +10,7 @@ const routes = [
   { path: '/logs', name: 'Logs', component: () => import('../views/LogsView.vue') },
   { path: '/env', name: 'Env', component: () => import('../views/EnvView.vue') },
   { path: '/ssh', name: 'Ssh', component: () => import('../views/SshView.vue') },
+  { path: '/docker', name: 'Docker', component: () => import('../views/DockerView.vue') },
   { path: '/quickpalette', name: 'QuickPalette', component: () => import('../views/QuickPalette.vue') },
 ]
 

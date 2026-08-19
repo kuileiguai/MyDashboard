@@ -111,12 +111,31 @@
         <!-- Disks -->
         <el-col :span="12">
           <el-card shadow="hover" class="chart-card">
-            <template #header>磁盘使用</template>
-            <div v-for="d in snapshot.disks" :key="d.mountpoint" class="disk-row">
-              <span>{{ d.mountpoint }} ({{ d.device }})</span>
-              <el-progress :percentage="d.percent" :color="d.percent > 90 ? '#f56c6c' : '#409eff'" :stroke-width="8" />
-              <small>{{ fmtBytes(d.used) }} / {{ fmtBytes(d.total) }}</small>
+            <template #header>
+              <div class="card-head-row">
+                <span>磁盘使用</span>
+                <el-button size="small" text type="primary" @click="diskView = diskView === 'list' ? 'treemap' : 'list'">
+                  <el-icon><Grid v-if="diskView === 'list'" /><List v-else /></el-icon>
+                  {{ diskView === 'list' ? '方块图' : '列表' }}
+                </el-button>
+              </div>
+            </template>
+            <div v-if="diskView === 'list'">
+              <div v-for="d in snapshot.disks" :key="d.mountpoint" class="disk-row">
+                <span>{{ d.mountpoint }} ({{ d.device }})</span>
+                <el-progress :percentage="d.percent" :color="d.percent > 90 ? '#f56c6c' : '#409eff'" :stroke-width="8" />
+                <small>{{ fmtBytes(d.used) }} / {{ fmtBytes(d.total) }}</small>
+              </div>
             </div>
+            <template v-else>
+              <div v-if="diskPath" class="disk-crumbs">
+                <el-button size="small" text type="primary" @click="diskBackToRoot">
+                  <el-icon><Back /></el-icon> 返回分区
+                </el-button>
+                <span class="disk-crumb-text">{{ diskPath }}</span>
+              </div>
+              <VChart :option="diskTreemapOption" class="disk-treemap" autoresize @click="onDiskTreemapClick" @contextmenu="onTreemapContextMenu" />
+            </template>
           </el-card>
         </el-col>
       </el-row>
@@ -191,17 +210,137 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { use } from 'echarts/core'
-import { LineChart, GaugeChart } from 'echarts/charts'
+import { LineChart, GaugeChart, TreemapChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import { useSystemStore } from '../stores/system'
 
-use([LineChart, GaugeChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent, CanvasRenderer])
+use([LineChart, GaugeChart, TreemapChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
 const systemStore = useSystemStore()
 const snapshot = computed(() => systemStore.snapshot)
 const history = computed(() => systemStore.history)
+
+// 磁盘视图：列表 / 方块图（treemap，可下钻到文件夹）
+const diskView = ref('list')
+const diskPath = ref(null)  // null = 分区视图；字符串 = 当前下钻路径
+const diskDrill = ref([])   // 当前路径下的子项占用
+
+const diskTreemapOption = computed(() => {
+  const colorOf = pct => pct > 85 ? '#f56c6c' : pct > 60 ? '#e6a23c' : '#67c23a'
+
+  // 下钻视图：当前路径下每个文件夹/文件的占用方块
+  if (diskPath.value !== null) {
+    const items = diskDrill.value
+    return {
+      tooltip: {
+        formatter: info => {
+          const d = info.data
+          return `<b>${d.name}</b><br/>占用: ${fmtBytes(d.size)}<br/>${d.is_dir ? '左键进入 · 右键打开文件管理器' : '文件'}`
+        },
+      },
+      series: [{
+        type: 'treemap',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        label: {
+          show: true,
+          formatter: p => `${p.name}\n${fmtBytes(p.data.size)}`,
+          fontSize: 11,
+          color: '#fff',
+          fontWeight: 'bold',
+        },
+        itemStyle: { borderColor: '#fff', borderWidth: 1.5, gapWidth: 1.5 },
+        data: items.map(x => ({
+          name: x.name,
+          value: x.size,
+          size: x.size,
+          path: x.path,
+          is_dir: x.is_dir,
+          itemStyle: { color: x.is_dir ? '#409eff' : '#b0b3b8' },
+        })),
+      }],
+    }
+  }
+
+  // 分区视图
+  const disks = snapshot.value?.disks || []
+  return {
+    tooltip: {
+      formatter: info => {
+        const d = info.data
+        return `<b>${d.name}</b><br/>已用: ${fmtBytes(d.used)} / ${fmtBytes(d.total)}<br/>使用率: ${d.percent}%<br/>左键进入 · 右键打开文件管理器`
+      },
+    },
+    series: [{
+      type: 'treemap',
+      roam: false,
+      nodeClick: false,
+      breadcrumb: { show: false },
+      label: {
+        show: true,
+        formatter: p => `${p.name}\n${p.data.percent}%`,
+        fontSize: 12,
+        color: '#fff',
+        fontWeight: 'bold',
+      },
+      itemStyle: { borderColor: '#fff', borderWidth: 2, gapWidth: 2 },
+      data: disks
+        .filter(d => d.total > 1024 * 1024 * 1024) // 过滤 <1GB 的 snap 微分区，保持方块图清晰
+        .map(d => ({
+          name: d.mountpoint,
+          value: d.used,
+          path: d.mountpoint,  // 下钻入口
+          is_dir: true,
+          percent: d.percent,
+          used: d.used,
+          total: d.total,
+          itemStyle: { color: colorOf(d.percent) },
+        })),
+    }],
+  }
+})
+
+// 加载某路径下的子项占用（SpaceSniffer 式下钻）
+async function loadDiskUsage(path) {
+  try {
+    const { data } = await api.get('/files/disk-usage', { params: { path } })
+    diskDrill.value = data.items || []
+  } catch (_) { diskDrill.value = [] }
+}
+
+function diskBackToRoot() {
+  diskPath.value = null
+  diskDrill.value = []
+}
+
+// 方块图点击：分区视图点击分区 → 下钻；下钻视图点击文件夹 → 继续下钻
+function onDiskTreemapClick(params) {
+  const d = params?.data
+  if (!d) return
+  if (diskPath.value === null) {
+    if (d.path) { diskPath.value = d.path; loadDiskUsage(d.path) }
+  } else {
+    if (d.is_dir && d.path) { diskPath.value = d.path; loadDiskUsage(d.path) }
+  }
+}
+
+// 右键方块：用系统文件管理器打开对应路径（方便删除等操作）
+async function openInFileManager(path) {
+  if (!path) return
+  try {
+    const { data } = await api.post('/files/open-file-manager', null, { params: { path } })
+    if (data && data.ok) ElMessage.success('已打开文件管理器')
+    else ElMessage.error(data?.error || '打开失败')
+  } catch (_) { ElMessage.error('打开失败') }
+}
+
+function onTreemapContextMenu(params) {
+  const d = params?.data
+  if (d && d.path) openInFileManager(d.path)
+}
 
 // CPU chart option
 const cpuOption = computed(() => {
@@ -392,4 +531,8 @@ onUnmounted(() => {
 .gpu-cmd { background: var(--el-fill-color-light); padding: 8px; border-radius: 4px; font-size: 12px; word-break: break-all; }
 .disk-row { padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .disk-row:last-child { border-bottom: none; }
+.disk-treemap { width: 100%; height: 260px; }
+.card-head-row { display: flex; justify-content: space-between; align-items: center; }
+.disk-crumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.disk-crumb-text { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

@@ -254,6 +254,84 @@ async def close_nautilus(win_id: str):
     except Exception:
         return {"ok": False, "error": "wmctrl not available"}
 
+
+# ── Nautilus 窗口别名（备注名）──
+
+@router.get("/nautilus-aliases")
+async def get_nautilus_aliases():
+    """获取 Nautilus 窗口别名映射 {win_id: alias}"""
+    import json
+    async with get_db() as db:
+        row = await db.execute_fetchall("SELECT value FROM settings WHERE key = 'nautilus_aliases'")
+    if row:
+        try:
+            return json.loads(row[0]["value"])
+        except Exception:
+            pass
+    return {}
+
+
+class NautilusAlias(BaseModel):
+    win_id: str
+    alias: str
+
+
+@router.post("/nautilus-aliases")
+async def save_nautilus_alias(body: NautilusAlias):
+    """保存单个 Nautilus 窗口别名（alias 为空则清除）"""
+    import json
+    async with get_db() as db:
+        row = await db.execute_fetchall("SELECT value FROM settings WHERE key = 'nautilus_aliases'")
+        aliases = json.loads(row[0]["value"]) if row else {}
+        if body.alias.strip():
+            aliases[body.win_id] = body.alias.strip()
+        else:
+            aliases.pop(body.win_id, None)
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('nautilus_aliases', ?)",
+            (json.dumps(aliases),),
+        )
+        await db.commit()
+    return {"ok": True, "aliases": aliases}
+
+
+# ── 磁盘占用方块图（SpaceSniffer 式下钻）──
+
+@router.get("/disk-usage")
+async def disk_usage(path: str = Query("~")):
+    """返回 path 下直接子项（目录/文件）的占用大小，供磁盘方块图下钻展示"""
+    import subprocess
+    p = _safe_path(path)
+    if not p.is_dir():
+        raise HTTPException(400, "Path is not a directory")
+    items = []
+    try:
+        proc = subprocess.run(
+            ["du", "--max-depth=1", "-x", str(p)],
+            capture_output=True, text=True, timeout=25,
+        )
+        for line in proc.stdout.strip().split("\n"):
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            try:
+                size = int(parts[0]) * 1024  # du 输出为 KB
+            except ValueError:
+                continue
+            item_path = parts[1]
+            if Path(item_path).resolve() == p.resolve():
+                continue  # 跳过目录自身（最后一行）
+            items.append({
+                "name": Path(item_path).name or item_path,
+                "path": item_path,
+                "size": size,
+                "is_dir": Path(item_path).is_dir(),
+            })
+    except Exception:
+        pass
+    items.sort(key=lambda x: x["size"], reverse=True)
+    return {"path": str(p), "items": items[:80]}
+
 # ── VSCode 打开 / 路径检测 ──
 
 @router.post("/open-in-vscode")
@@ -278,3 +356,24 @@ async def path_exists(path: str = Query(...)):
     import os
     p = os.path.expanduser(path)
     return {"path": p, "exists": os.path.exists(p), "is_dir": os.path.isdir(p) if os.path.exists(p) else False}
+
+
+@router.post("/open-file-manager")
+async def open_file_manager(path: str = Query(...)):
+    """用系统文件管理器（Nautilus/xdg-open）打开指定路径，方便删除等操作"""
+    import subprocess
+    p = _safe_path(path)
+    if not p.exists():
+        return {"ok": False, "error": "Path not found"}
+    target = str(p) if p.is_dir() else str(p.parent)
+    try:
+        subprocess.Popen(["nautilus", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"ok": True, "path": target}
+    except FileNotFoundError:
+        try:
+            subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return {"ok": True, "path": target}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

@@ -35,7 +35,8 @@ HOTKEY = os.environ.get("PALETTE_HOTKEY", "<ctrl>+<shift>+<space>")
 
 _WINDOW = None
 _pause_follow = False
-_seen_terminal = False  # 是否已吸附过一次终端（之后才启用"切走隐藏"）
+_user_hidden = False  # 用户手动隐藏后 follow 不再自动显示
+_pinned = False  # 固定：窗口停住不跟随吸附
 _last_pos = None  # 上次定位，避免重复 move
 
 
@@ -67,28 +68,90 @@ _TERMINAL_MARKERS = [
 ]
 
 
-def is_terminal_window(win_id):
-    """启发式判断活动窗口是否为终端"""
-    title = _run(["xdotool", "getwindowname", win_id]).lower()
-    if re.search(r"[/~]\w+", title) or re.search(r"\w+@\w+", title):
+def _title_is_terminal(title: str) -> bool:
+    """根据窗口标题启发式判断是否为终端"""
+    t = title.lower()
+    if re.search(r"[/~]\w+", t) or re.search(r"\w+@\w+", t):
         return True
-    return any(m in title for m in _TERMINAL_MARKERS)
+    return any(m in t for m in _TERMINAL_MARKERS)
+
+
+def is_terminal_window(win_id):
+    """判断指定窗口是否为终端"""
+    title = _run(["xdotool", "getwindowname", win_id])
+    return _title_is_terminal(title)
+
+
+def has_terminal_window() -> bool:
+    """桌面上是否存在终端窗口（遍历 wmctrl 窗口列表）"""
+    out = _run(["wmctrl", "-l"])
+    for line in out.splitlines():
+        parts = line.split(None, 4)
+        if len(parts) >= 5 and _title_is_terminal(parts[4]):
+            return True
+    return False
+
+
+def _window_is_iconic() -> bool:
+    """检测悬浮窗当前是否处于最小化（Iconic）状态"""
+    try:
+        xid = get_window_xid()
+        if not xid:
+            return False
+        out = _run(["xprop", "-id", str(xid), "WM_STATE"])
+        return "Iconic" in out
+    except Exception:
+        return False
 
 
 class Api:
     """暴露给前端的桥接：window.pywebview.api"""
 
+    def _show(self):
+        """恢复显示：最小化(iconify)窗口必须 deiconify，pywebview 的 show() 不会恢复最小化窗口"""
+        if _WINDOW:
+            _WINDOW.restore()
+            _WINDOW.show()
+
     def hide(self):
+        global _user_hidden
+        _user_hidden = True
         if _WINDOW:
             _WINDOW.hide()
 
     def show(self):
-        if _WINDOW:
-            _WINDOW.show()
+        global _user_hidden
+        _user_hidden = False
+        self._show()
 
     def toggle(self):
+        global _user_hidden
+        if _WINDOW is None:
+            return
+        if _window_is_iconic():
+            # 最小化中 → 直接恢复（一次唤回）
+            _user_hidden = False
+            self._show()
+            return
+        # 注意：pywebview 的 _WINDOW.hidden 不随 show/hide 更新，须用自维护的 _user_hidden 判断
+        if _user_hidden:
+            _user_hidden = False
+            self._show()
+        else:
+            _user_hidden = True
+            _WINDOW.hide()
+
+    def minimize(self):
         if _WINDOW:
-            _WINDOW.show() if _WINDOW.hidden else _WINDOW.hide()
+            _WINDOW.minimize()
+
+    def togglePin(self):
+        global _pinned
+        _pinned = not _pinned
+        return _pinned
+
+    def isPinned(self):
+        return _pinned
 
 
 def toggle_window():
@@ -121,54 +184,103 @@ def get_window_xid():
         return None
 
 
+def _screen_size():
+    """返回 (宽, 高)，失败时回退 1920x1080"""
+    try:
+        dg = _run(["xdotool", "getdisplaygeometry"]).split()
+        if len(dg) == 2 and dg[0].isdigit() and dg[1].isdigit():
+            return int(dg[0]), int(dg[1])
+    except Exception:
+        pass
+    return int(os.environ.get("PALETTE_SCREEN_W", "1920")), int(os.environ.get("PALETTE_SCREEN_H", "1080"))
+
+
+def _place_window(target):
+    """把窗口移动到目标位置（去重），返回是否执行了移动"""
+    global _last_pos
+    if target == _last_pos:
+        return False
+    xid = get_window_xid()
+    if xid:
+        _run(["xdotool", "windowmove", str(xid), str(target[0]), str(target[1])])
+    else:
+        _WINDOW.move(*target)
+    _last_pos = target
+    return True
+
+
+def _window_is_self(wid) -> bool:
+    """活动窗口是否为悬浮窗自身（用户正在操作小屏时不应移动窗口）"""
+    if not wid:
+        return False
+    try:
+        xid = get_window_xid()
+        if not xid:
+            return False
+        return str(xid) == str(wid) or (wid.lower().startswith("0x") and str(int(wid, 16)) == str(xid))
+    except Exception:
+        return False
+
+
 def follow_loop():
-    """后台线程：跟随活动终端定位；启动后先吸附过一次终端，切走才隐藏"""
-    global _WINDOW, _seen_terminal, _last_pos
+    """后台线程：桌面上有终端窗口时显示（活动终端吸附/其他窗口移角落），无终端窗口时自动隐藏。
+    手动隐藏用快捷键/托盘（_user_hidden）。"""
+    global _WINDOW, _last_pos
     debug = os.environ.get("PALETTE_DEBUG", "") == "1"
     while True:
         try:
             if _WINDOW is None or _pause_follow:
                 time.sleep(POLL_INTERVAL)
                 continue
+
+            # 用户正在操作小屏（滚动列表/拖窗口）时：不移动、不隐藏、不吸附
+            if _window_is_self(get_active_window_id()):
+                time.sleep(POLL_INTERVAL)
+                continue
+
+            if _pinned:
+                # 固定：窗口停住，不跟随吸附、无终端也不自动隐藏（用户手动隐藏仍优先）
+                if not _user_hidden and _WINDOW.hidden:
+                    _WINDOW.show()
+                    _last_pos = None
+                time.sleep(POLL_INTERVAL)
+                continue
+
+            # 桌面上没有任何终端窗口 → 自动隐藏
+            if not has_terminal_window():
+                if not _WINDOW.hidden:
+                    _WINDOW.hide()
+                if debug:
+                    print("[follow] 无终端窗口，自动隐藏", flush=True)
+                time.sleep(POLL_INTERVAL)
+                continue
+
+            sw, sh = _screen_size()
             wid = get_active_window_id()
             if wid and is_terminal_window(wid):
-                _seen_terminal = True
                 geo = get_window_geometry(wid)
                 x = int(geo.get("X", 0) or 0)
                 y = int(geo.get("Y", 0) or 0)
                 w = int(geo.get("WIDTH", 800) or 800)
                 # 屏幕边界：右侧放不下则放终端左侧，仍放不下则贴屏幕右缘
-                sw = int(os.environ.get("PALETTE_SCREEN_W", "1920"))
-                try:
-                    dg = _run(["xdotool", "getdisplaygeometry"]).split()
-                    if len(dg) == 2 and dg[0].isdigit():
-                        sw = int(dg[0])
-                except Exception:
-                    pass
                 target_x = x + w + GAP
                 if target_x + WIN_W > sw:
                     target_x = x - GAP - WIN_W
                     if target_x < 0:
                         target_x = max(0, sw - WIN_W)
                 target = (target_x, y)
-                if target != _last_pos:
-                    xid = get_window_xid()
-                    if xid:
-                        _run(["xdotool", "windowmove", str(xid), str(target[0]), str(target[1])])
-                    else:
-                        _WINDOW.move(*target)
-                    _last_pos = target
-                if _WINDOW.hidden:
-                    _WINDOW.show()
-                    _last_pos = None  # 重新显示后强制下次重新定位
-                if debug:
-                    print(f"[follow] 终端 {wid} -> {target}", flush=True)
             else:
-                # 启动初期保持可见，让用户知道小屏已就绪；吸附过终端后才自动隐藏
-                if _seen_terminal and not _WINDOW.hidden:
-                    _WINDOW.hide()
-                if debug:
-                    print(f"[follow] 非终端窗口 {wid or '<none>'}（{'隐藏' if _seen_terminal else '保持可见'}）", flush=True)
+                # 有终端但活动窗口非终端：移到屏幕右下角（留出边距），保持可见
+                target = (max(0, sw - WIN_W - GAP), max(0, sh - WIN_H - GAP))
+            if _user_hidden:
+                time.sleep(POLL_INTERVAL)
+                continue
+            if _WINDOW.hidden:
+                _WINDOW.show()
+                _last_pos = None  # 重新显示后强制下次重新定位
+            _place_window(target)
+            if debug:
+                print(f"[follow] -> {target}（活动窗口 {wid or '<none>'}）", flush=True)
         except Exception as e:
             if debug:
                 print(f"[follow] error: {e}", flush=True)
@@ -220,6 +332,10 @@ def start_tray():
 
 def main():
     global _WINDOW
+    # 禁用全局 easy_drag（否则内容区/滚动条按住拖动会移动整个窗口），
+    # 改用指定拖动区域：仅顶部 .drag-region 拖动条可移动窗口
+    webview.settings['DRAG_REGION_SELECTOR'] = '.drag-region'
+    webview.settings['DRAG_REGION_DIRECT_TARGET_ONLY'] = True
     _WINDOW = webview.create_window(
         "命令小屏",
         PALETTE_URL,
@@ -231,6 +347,7 @@ def main():
         on_top=True,
         resizable=True,
         focus=True,
+        easy_drag=False,
         js_api=Api(),
     )
 
@@ -239,7 +356,8 @@ def main():
     start_tray()
 
     print(f"[quickpalette] 加载 {PALETTE_URL}（{WIN_W}x{WIN_H}）")
-    webview.start()
+    # private_mode=False：隐私模式会禁用 localStorage，导致 App.vue 渲染报错白屏
+    webview.start(private_mode=False)
 
 
 if __name__ == "__main__":

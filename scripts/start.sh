@@ -32,11 +32,24 @@ BACKEND_PID=$!
 # 可选：启动悬浮小屏（需图形会话 X11，默认关闭）
 # 启用方式：DASH_PALETTE=1 ./scripts/start.sh
 if [ "${DASH_PALETTE:-0}" = "1" ]; then
-  sleep 2
-  echo "=== 启动悬浮小屏 (quickpalette) ==="
-  DISPLAY="${DISPLAY:-:0}" DASH_URL="http://127.0.0.1:8787" \
-    .venv/bin/python "$PROJECT_DIR/scripts/quickpalette.py" &
-  PALETTE_PID=$!
+  # 等待后端就绪（最多 30s），避免悬浮窗加载页面失败变成白板
+  echo "=== 等待后端就绪 ==="
+  ready=0
+  for _ in $(seq 1 30); do
+    if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:8787/quickpalette" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" = "1" ]; then
+    echo "=== 启动悬浮小屏 (quickpalette) ==="
+    DISPLAY="${DISPLAY:-:0}" DASH_URL="http://127.0.0.1:8787" \
+      .venv/bin/python "$PROJECT_DIR/scripts/quickpalette.py" &
+    PALETTE_PID=$!
+  else
+    echo "警告: 后端 30 秒内未就绪，跳过悬浮小屏启动" >&2
+  fi
 fi
 
 cleanup() {
