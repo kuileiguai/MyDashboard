@@ -27,6 +27,10 @@ DISK_ALERT_THRESHOLD = 0.90  # 90% 预警
 # 日志
 LOG_DIR = DB_DIR / "logs"
 
+# Docker：当前用户无 docker 组权限、且不想改用户组/重新登录时，
+# 设为 "1" 让后端调用 docker 时自动加 `sudo -n`（非交互，需 sudo NOPASSWD 或已缓存凭证）。
+DOCKER_SUDO = os.environ.get("DASH_DOCKER_SUDO", "0") == "1"
+
 # shell 历史自动同步（全局指令收录）
 HISTORY_SYNC_INTERVAL = float(os.environ.get("DASH_HISTORY_SYNC_INTERVAL", "5.0"))  # 增量同步间隔 (s)
 HISTORY_GLOBAL = os.environ.get("DASH_HISTORY_GLOBAL", "0") == "1"  # 是否同步 /home/* 下所有用户的历史
