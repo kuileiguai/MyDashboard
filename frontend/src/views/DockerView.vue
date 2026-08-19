@@ -374,7 +374,7 @@ onMounted(() => {
 .df-pre {
   background: var(--el-fill-color-light);
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   max-height: 260px;
   overflow: auto;
@@ -384,7 +384,7 @@ onMounted(() => {
   background: #1e1e1e;
   color: #d4d4d4;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   max-height: 500px;
   overflow: auto;

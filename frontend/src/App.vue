@@ -7,8 +7,13 @@
       <!-- Sidebar -->
       <el-aside :width="isCollapsed ? '64px' : '220px'" class="app-sidebar">
         <div class="sidebar-header" @click="isCollapsed = !isCollapsed">
-          <el-icon :size="20"><Monitor /></el-icon>
-          <span v-show="!isCollapsed" class="sidebar-title">Dev Dash</span>
+          <div class="brand-logo">
+            <el-icon :size="18"><Monitor /></el-icon>
+          </div>
+          <div v-show="!isCollapsed" class="brand-text">
+            <span class="sidebar-title">Dev Dash</span>
+            <span class="sidebar-sub">管理后台</span>
+          </div>
         </div>
 
         <el-menu :default-active="activeMenu" :collapse="isCollapsed" :router="true"
@@ -144,16 +149,58 @@ onMounted(() => { if (!isPalette.value) refreshDeps() })
 </script>
 
 <style scoped>
-.app-container { height: 100vh; background: var(--el-bg-color); color: var(--el-text-color-primary); }
-.app-sidebar { height: 100vh; display: flex; flex-direction: column; background: var(--el-bg-color-overlay); border-right: 1px solid var(--el-border-color-light); transition: width 0.2s; overflow: hidden; }
-.sidebar-header { height: 56px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; color: var(--el-color-primary); user-select: none; border-bottom: 1px solid var(--el-border-color-lighter); }
-.sidebar-title { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
-.sidebar-menu { flex: 1; border-right: none !important; }
+.app-container { height: 100vh; background: transparent; color: var(--el-text-color-primary); }
+.app-sidebar {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--el-bg-color);
+  border-right: none;
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+  box-shadow: 1px 0 0 var(--el-border-color-lighter), var(--shadow-sm);
+  transition: width 0.2s;
+  overflow: hidden;
+  z-index: 10;
+}
+.sidebar-header {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.brand-logo {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--ub-rose) 0%, var(--ub-rose-soft) 55%, var(--ub-aubergine) 130%);
+  box-shadow: var(--shadow-brand);
+}
+.brand-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+.sidebar-title { font-size: 16px; font-weight: 800; letter-spacing: 0.5px; color: var(--el-text-color-primary); }
+.sidebar-sub { font-size: 10px; color: var(--ub-warm-grey); letter-spacing: 1.5px; }
+.sidebar-menu { flex: 1; border-right: none !important; background: transparent; }
 .sidebar-footer { padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; border-top: 1px solid var(--el-border-color-lighter); }
-.app-main { height: 100vh; overflow-y: auto; padding: 0; background: var(--el-bg-color-page); }
-.dark .app-sidebar { background: #1d1e1f; border-color: #333; }
+.app-main { height: 100vh; overflow-y: auto; padding: 0; background: transparent; }
 
-.dep-status { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+.dep-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  transition: background 0.15s ease;
+}
 .dep-status:hover { background: var(--el-fill-color-light); }
 .dep-label { color: var(--el-text-color-secondary); white-space: nowrap; font-size: 11px; }
 </style>

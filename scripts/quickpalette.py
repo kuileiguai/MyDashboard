@@ -20,8 +20,20 @@ import time
 # 无 GPU/远程桌面下 GL 初始化失败会导致 WebKitWebProcess 空转吃满 CPU：
 #   · 禁用 DMABUF 渲染器，回退到共享内存渲染
 #   · 强制 Mesa 软件 GL（llvmpipe），避免 GL 初始化反复失败重试
+# 替换原来的两行 setdefault
 os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
-os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+
+# 仅当没有硬件 GL 时才回退软件渲染（有 GPU 时保留硬件加速以支持透明）
+try:
+    import subprocess as _sp
+    _gl_check = _sp.run(["glxinfo"], capture_output=True, text=True, timeout=3)
+    _has_hw_gl = "direct rendering: Yes" in _gl_check.stdout.lower()
+except Exception:
+    _has_hw_gl = False
+
+if not _has_hw_gl:
+    os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+    print("[quickpalette] 无硬件GL，已启用软件渲染（透明可能不可用）")
 
 import webview
 
@@ -45,6 +57,41 @@ def _run(cmd, timeout=3):
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout.strip()
     except Exception:
         return ""
+
+
+def _compositor_available():
+    """探测桌面合成器（仅用于日志提示，不影响透明默认开启）：
+    - Wayland 会话本身即合成渲染，直接判定可用
+    - X11 下查询 _NET_WM_CM_S0 选择器是否有 owner
+    - 探测失败按可用处理（不误伤正常桌面）"""
+    if os.environ.get("XDG_SESSION_TYPE") == "wayland":
+        return True
+    try:
+        out = _run(["xprop", "-root", "_NET_WM_CM_S0"], timeout=2)
+        return bool(out.strip()) and "not found" not in out.lower()
+    except Exception:
+        return True
+
+
+# 透明窗口（圆角面板四角透出桌面）：默认开启（画布透明）。
+#   PALETTE_TRANSPARENT=0 显式关闭（改用微粉兜底）；=1 或未设置均开启。
+#   合成器探测结果只写日志提示：无合成器环境下若显示异常，可设 0 回退。
+# 替换原来的 TRANSPARENT 赋值逻辑
+_transparent_env = os.environ.get("PALETTE_TRANSPARENT")
+if _transparent_env == "0":
+    TRANSPARENT = False
+    TRANSPARENT_REASON = "显式关闭（PALETTE_TRANSPARENT=0）"
+elif _transparent_env == "1":
+    TRANSPARENT = True
+    TRANSPARENT_REASON = "显式开启（PALETTE_TRANSPARENT=1，若显示异常请设为0）"
+else:
+    # 未设置环境变量时：严格依赖合成器检测结果
+    _comp = _compositor_available()
+    TRANSPARENT = _comp  # ← 关键改动：无合成器则自动关闭透明
+    TRANSPARENT_REASON = (
+        "默认开启（已检测到合成器）" if _comp
+        else "自动关闭（未检测到合成器，如需强制开启设 PALETTE_TRANSPARENT=1）"
+    )
 
 
 def get_active_window_id():
@@ -152,6 +199,10 @@ class Api:
 
     def isPinned(self):
         return _pinned
+
+    def isTransparent(self):
+        """是否启用透明窗口（前端据此决定 body 背景：透明透桌面 / 微粉兜底）"""
+        return TRANSPARENT
 
 
 def toggle_window():
@@ -330,8 +381,47 @@ def start_tray():
     print("[quickpalette] 托盘图标已启动")
 
 
+def _ensure_loopback_no_proxy():
+    """修复 WebKit 加载本机后端报 "Could not connect: Connection refused"。
+
+    Clash 类本地代理（gsettings manual 127.0.0.1:7890）会拒绝转发回环请求。
+    WebKit 的代理解析器（GProxyResolverGnome / libproxy）只认 ignore 列表里的
+    精确 IP / 域名（GLib 不支持 '*' 通配符，libproxy 对 CIDR 127.0.0.0/8 支持不佳），
+    且部分 Clash 版本设置系统代理时会清空 ignore-hosts，导致 127.0.0.1 被送去代理而报错。
+
+    这里做两件事（幂等、只增不减，不影响其他代理配置）：
+    1) 进程级 no_proxy 设为精确回环地址（libproxy 路径兜底）；
+    2) 确保系统 gsettings ignore-hosts 包含 localhost / 127.0.0.1 / ::1。
+    """
+    os.environ["no_proxy"] = "127.0.0.1,localhost,::1,0.0.0.0"
+    os.environ["NO_PROXY"] = "127.0.0.1,localhost,::1,0.0.0.0"
+    try:
+        out = subprocess.run(
+            ["gsettings", "get", "org.gnome.system.proxy", "ignore-hosts"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if out.startswith("["):
+            items = [x.strip().strip("'\"") for x in out.strip("[]").split(",") if x.strip()]
+            changed = False
+            for add in ("localhost", "127.0.0.1", "::1"):
+                if add not in items:
+                    items.append(add)
+                    changed = True
+            if changed:
+                new_val = "[" + ", ".join(f"'{i}'" for i in items) + "]"
+                proc = subprocess.run(
+                    ["gsettings", "set", "org.gnome.system.proxy", "ignore-hosts", new_val],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if proc.returncode == 0:
+                    print(f"[quickpalette] 已把回环地址加入系统代理绕过列表: {new_val}", flush=True)
+    except Exception:
+        pass  # 无 D-Bus 会话/只读 dconf 时跳过，不影响悬浮小屏本身
+
+
 def main():
     global _WINDOW
+    _ensure_loopback_no_proxy()
     # 禁用全局 easy_drag（否则内容区/滚动条按住拖动会移动整个窗口），
     # 改用指定拖动区域：仅顶部 .drag-region 拖动条可移动窗口
     webview.settings['DRAG_REGION_SELECTOR'] = '.drag-region'
@@ -345,6 +435,7 @@ def main():
         y=100,
         frameless=True,
         on_top=True,
+        transparent=TRANSPARENT,
         resizable=True,
         focus=True,
         easy_drag=False,
@@ -356,6 +447,7 @@ def main():
     start_tray()
 
     print(f"[quickpalette] 加载 {PALETTE_URL}（{WIN_W}x{WIN_H}）")
+    print(f"[quickpalette] 透明窗口: {'开启' if TRANSPARENT else '关闭'}（{TRANSPARENT_REASON}）")
     # private_mode=False：隐私模式会禁用 localStorage，导致 App.vue 渲染报错白屏
     webview.start(private_mode=False)
 

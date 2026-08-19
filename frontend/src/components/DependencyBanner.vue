@@ -77,5 +77,5 @@ defineExpose({ check })
   margin-top: 8px;
 }
 .dep-list { display: flex; gap: 8px; flex-wrap: wrap }
-.dep-list span { background: var(--el-color-warning-light); padding: 2px 8px; border-radius: 4px; font-size: 12px; font-family: monospace }
+.dep-list span { background: var(--el-color-warning-light); padding: 2px 10px; border-radius: var(--radius-pill); font-size: 12px; font-family: monospace }
 </style>

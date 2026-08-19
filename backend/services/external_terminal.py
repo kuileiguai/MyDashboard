@@ -6,6 +6,8 @@
 
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -18,6 +20,47 @@ TERMINAL_PATTERNS = [
     "rxvt", "st-", "foot", "cool-retro-term", "qterminal",
     "lxterminal", "mate-terminal", "deepin-terminal", "io.elementary.terminal",
 ]
+
+
+def open_terminal_at(path: str) -> str | None:
+    """在指定目录打开一个新的外部终端窗口。
+
+    依次探测本机可用的终端模拟器（gnome-terminal / xfce4-terminal /
+    konsole / tilix / alacritty / kitty / wezterm / x-terminal-emulator），
+    用第一个命中的启动，工作目录指向 path。
+
+    返回实际使用的终端命令名；path 不存在或全部启动失败时返回 None。
+    """
+    path = os.path.expanduser(path)
+    if not os.path.isdir(path):
+        return None
+
+    candidates = [
+        (["gnome-terminal", "--working-directory", path], "gnome-terminal"),
+        (["xfce4-terminal", "--working-directory", path], "xfce4-terminal"),
+        (["konsole", "--workdir", path], "konsole"),
+        (["tilix", "--working-directory", path], "tilix"),
+        (["alacritty", "--working-directory", path], "alacritty"),
+        (["kitty", "--directory", path], "kitty"),
+        (["wezterm", "start", "--cwd", path], "wezterm"),
+        # Debian 系通用兜底：在目标目录启动交互式 shell
+        (["x-terminal-emulator", "-e", "bash", "-lc", f"cd {shlex.quote(path)} && exec $SHELL"], "x-terminal-emulator"),
+    ]
+    for cmd, name in candidates:
+        if not shutil.which(name):
+            continue
+        try:
+            subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,  # 脱离后端进程组，避免随服务退出
+            )
+            return name
+        except Exception:
+            continue
+    return None
 
 
 def list_terminal_windows() -> list[dict]:

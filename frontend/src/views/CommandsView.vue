@@ -290,6 +290,6 @@ onMounted(() => { fetchCommands(); fetchTop() })
 .top-bar { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
 .top-tag { cursor: pointer; }
 .param-table { margin: 8px 0 12px; }
-.examples { background: var(--el-fill-color-light); padding: 12px; border-radius: 6px; font-family: monospace; }
+.examples { background: var(--el-fill-color-light); padding: 12px; border-radius: var(--radius-sm); font-family: monospace; }
 .inline-upload { display: inline-block; }
 </style>

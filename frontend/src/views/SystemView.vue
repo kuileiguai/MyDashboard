@@ -123,7 +123,7 @@
             <div v-if="diskView === 'list'">
               <div v-for="d in snapshot.disks" :key="d.mountpoint" class="disk-row">
                 <span>{{ d.mountpoint }} ({{ d.device }})</span>
-                <el-progress :percentage="d.percent" :color="d.percent > 90 ? '#f56c6c' : '#409eff'" :stroke-width="8" />
+                <el-progress :percentage="d.percent" :color="d.percent > 90 ? '#f56c6c' : '#e91e63'" :stroke-width="8" />
                 <small>{{ fmtBytes(d.used) }} / {{ fmtBytes(d.total) }}</small>
               </div>
             </div>
@@ -259,7 +259,7 @@ const diskTreemapOption = computed(() => {
           size: x.size,
           path: x.path,
           is_dir: x.is_dir,
-          itemStyle: { color: x.is_dir ? '#409eff' : '#b0b3b8' },
+          itemStyle: { color: x.is_dir ? '#e91e63' : '#aea79f' },
         })),
       }],
     }
@@ -355,8 +355,8 @@ const cpuOption = computed(() => {
       name: 'CPU 总使用率', type: 'line', smooth: true, symbol: 'none',
       data: history.value.map(h => h.cpu?.total || 0).slice(-60),
       areaStyle: { opacity: 0.15 },
-      lineStyle: { color: '#409eff' },
-      itemStyle: { color: '#409eff' },
+      lineStyle: { color: '#e91e63' },
+      itemStyle: { color: '#e91e63' },
     }],
   }
 })
@@ -380,8 +380,8 @@ const memOption = computed(() => {
       {
         name: 'Swap', type: 'line', smooth: true, symbol: 'none',
         data: history.value.map(h => h.swap?.percent || 0).slice(-60),
-        lineStyle: { color: '#909399' },
-        itemStyle: { color: '#909399' },
+        lineStyle: { color: '#aea79f' },
+        itemStyle: { color: '#aea79f' },
       },
     ],
   }
@@ -424,8 +424,8 @@ const netOption = computed(() => {
       {
         name: '上传', type: 'line', smooth: true, symbol: 'none',
         data: uploadRates.slice(-60),
-        lineStyle: { color: '#409eff' },
-        itemStyle: { color: '#409eff' },
+        lineStyle: { color: '#e91e63' },
+        itemStyle: { color: '#e91e63' },
       },
     ],
   }
@@ -520,7 +520,7 @@ onUnmounted(() => {
 .chart-card { margin-bottom: 0; }
 .gpu-card { margin-bottom: 12px; }
 .gpu-stats { display: flex; gap: 16px; margin: 8px 0; font-size: 13px; color: var(--el-text-color-secondary); flex-wrap: wrap; }
-.gpu-proc-table { margin-top: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 6px; }
+.gpu-proc-table { margin-top: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: var(--radius-md); padding: 6px; }
 .gpu-proc-header { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
 .gpu-proc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--el-border-color-extra-light); }
 .gpu-proc-row:last-child { border-bottom: none; }
@@ -528,7 +528,7 @@ onUnmounted(() => {
 .gpu-proc-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gpu-proc-mem { color: var(--el-text-color-secondary); font-size: 11px; flex-shrink: 0; }
 .gpu-proc-actions { display: flex; flex-shrink: 0; }
-.gpu-cmd { background: var(--el-fill-color-light); padding: 8px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+.gpu-cmd { background: var(--el-fill-color-light); padding: 8px; border-radius: var(--radius-sm); font-size: 12px; word-break: break-all; }
 .disk-row { padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .disk-row:last-child { border-bottom: none; }
 .disk-treemap { width: 100%; height: 260px; }

@@ -128,7 +128,7 @@
           @mouseenter="activeIndex = i"
           @click="termAction(t)"
         >
-          <el-icon color="#409eff"><Monitor /></el-icon>
+          <el-icon color="#e91e63"><Monitor /></el-icon>
           <span class="cmd">{{ tAliases[t.id] || t.title || t.class || t.id }}</span>
           <span class="desc" v-if="!tAliases[t.id] && t.cwd">{{ t.cwd }}</span>
           <span class="ops" @click.stop>
@@ -450,6 +450,20 @@ function onGlobalKey(e) {
 }
 
 onMounted(() => {
+  // html/body 默认透明（透桌面）由 palette-host 提供；仅当透明窗口被禁用/不可用时补 palette-opaque 兜底
+  document.documentElement.classList.add('palette-host')
+  document.body.classList.add('palette-host')
+  if (window.pywebview?.api?.isTransparent) {
+    window.pywebview.api.isTransparent().then(v => {
+      if (!v) {
+        document.documentElement.classList.add('palette-opaque')
+        document.body.classList.add('palette-opaque')
+      }
+    }).catch(() => {
+      document.documentElement.classList.add('palette-opaque')
+      document.body.classList.add('palette-opaque')
+    })
+  }
   load()
   window.addEventListener('keydown', onGlobalKey)
   // 定时自动刷新：命令/端口/终端 5s；文件夹窗口 5s（窗口开合变化）
@@ -462,6 +476,8 @@ onMounted(() => {
   if (window.pywebview?.api?.isPinned) window.pywebview.api.isPinned().then(v => { pinned.value = v }).catch(() => {})
 })
 onUnmounted(() => {
+  document.documentElement.classList.remove('palette-host', 'palette-opaque')
+  document.body.classList.remove('palette-host', 'palette-opaque')
   window.removeEventListener('keydown', onGlobalKey)
   if (refreshTimer) clearInterval(refreshTimer)
 })
@@ -469,12 +485,20 @@ onUnmounted(() => {
 
 <style scoped>
 .palette {
-  height: 100vh;
+  position: absolute;
+  inset: 8px;
   display: flex;
   flex-direction: column;
   background: var(--el-bg-color);
   color: var(--el-text-color-primary);
   overflow: hidden;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: var(--shadow-lg);
+}
+/* 圆角面板四周留出呼吸感：底部/两侧内边距让内容不贴边 */
+.palette-body {
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
 }
 .drag-bar {
   height: 12px;
@@ -512,12 +536,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13px;
 }
 .palette-item:hover { background: var(--el-fill-color-light); }
-.palette-item.active { background: var(--el-color-primary-light-9); }
+.palette-item.active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 .palette-item .cmd {
   font-family: 'JetBrains Mono', 'Consolas', monospace;
   white-space: nowrap;

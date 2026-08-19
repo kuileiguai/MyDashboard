@@ -122,6 +122,6 @@ onUnmounted(() => { for (const u of Object.values(tailUnsubs)) if (typeof u === 
 .log-line { display: flex; gap: 12px; border-bottom: 1px solid var(--el-border-color-extra-light); }
 .log-line.error { background: rgba(245,108,108,0.08); color: #f56c6c; }
 .log-line.warn { background: rgba(230,162,60,0.06); color: #e6a23c; }
-.log-line.info { color: #409eff; }
+.log-line.info { color: #e91e63; }
 .line-num { width: 50px; flex-shrink: 0; color: var(--el-text-color-disabled); text-align: right; user-select: none; }
 </style>

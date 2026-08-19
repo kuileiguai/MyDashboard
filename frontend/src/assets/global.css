@@ -1,7 +1,88 @@
+/* ================================================================
+   MyDashboard 设计系统 — 现代扁平化 · Ubuntu 经典橘红主题
+   设计令牌 + Element Plus 全局覆盖（亮 / 暗双模式）
+   ================================================================ */
+
 :root {
   --sidebar-width: 220px;
+
+  /* ── 品牌色（玫红主题 · 参考 Ubuntu 经典酒红/玫红系） ── */
+  --ub-rose: #e91e63;            /* 玫红 —— 主色 */
+  --ub-rose-soft: #f06292;       /* 亮玫红（渐变、悬停） */
+  --ub-rose-light: #f48fb1;      /* 浅玫红 */
+  --ub-rose-bg: #fdebf2;         /* 主色极浅背景 */
+  --ub-rose-deep: #c2185b;       /* 深玫红 */
+  --ub-aubergine: #772953;       /* 酒红紫 —— 强调色 */
+  --ub-aubergine-deep: #5e2750;  /* 深茄子紫 */
+  --ub-warm-grey: #aea79f;       /* 暖灰 —— 中性辅助 */
+  --ub-ink: #2c2c2c;
+
+  /* ── 圆角体系（大圆角） ── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-pill: 999px;
+
+  /* ── 柔和阴影体系 ── */
+  --shadow-sm: 0 1px 2px rgba(31, 15, 8, 0.04), 0 2px 8px rgba(31, 15, 8, 0.05);
+  --shadow-md: 0 4px 12px rgba(31, 15, 8, 0.06), 0 10px 28px rgba(31, 15, 8, 0.06);
+  --shadow-lg: 0 12px 36px rgba(31, 15, 8, 0.12), 0 4px 12px rgba(31, 15, 8, 0.06);
+  --shadow-brand: 0 6px 16px rgba(233, 30, 99, 0.28);
+
+  /* ── Element Plus 主色覆盖（亮色 · 玫红） ── */
+  --el-color-primary: #e91e63;
+  --el-color-primary-light-3: #f06292;
+  --el-color-primary-light-5: #f48fb1;
+  --el-color-primary-light-7: #f8bbd0;
+  --el-color-primary-light-8: #fad3e0;
+  --el-color-primary-light-9: #fdebf2;
+  --el-color-primary-dark-2: #c2185b;
+
+  /* ── Element Plus 圆角 / 阴影覆盖 ── */
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: var(--radius-pill);
+  --el-border-radius-circle: 100%;
+  --el-box-shadow: var(--shadow-md);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-box-shadow-lighter: 0 1px 3px rgba(31, 15, 8, 0.04);
+  --el-box-shadow-dark: var(--shadow-lg);
+
+  /* ── 页面底色：微粉暖白，SaaS 感 ── */
+  --el-bg-color-page: #f8f5f6;
+  --el-bg-color: #ffffff;
+  --el-bg-color-overlay: #ffffff;
 }
 
+/* ================================================================
+   暗色模式覆盖
+   ================================================================ */
+html.dark {
+  --ub-rose-bg: rgba(233, 30, 99, 0.12);
+
+  --el-color-primary: #e91e63;
+  --el-color-primary-light-3: #c2185b;
+  --el-color-primary-light-5: #9c1446;
+  --el-color-primary-light-7: #7a0f38;
+  --el-color-primary-light-8: #5c0b2b;
+  --el-color-primary-light-9: #3e071e;
+  --el-color-primary-dark-2: #f06292;
+
+  --el-bg-color-page: #161213;
+  --el-bg-color: #1c1819;
+  --el-bg-color-overlay: #232021;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-brand: 0 6px 16px rgba(233, 30, 99, 0.35);
+}
+
+/* ================================================================
+   基础
+   ================================================================ */
 * {
   margin: 0;
   padding: 0;
@@ -10,23 +91,61 @@
 
 html, body, #app {
   height: 100%;
-  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 层次背景：多层径向渐变光晕（玫红/深玫红/酒红紫）+ 顶部微粉渐变，fixed 保证滚动时层次感稳定 */
+body {
+  background:
+    radial-gradient(1100px 560px at 88% -10%, rgba(233, 30, 99, 0.10), transparent 62%),
+    radial-gradient(900px 480px at -10% 6%, rgba(194, 24, 91, 0.08), transparent 60%),
+    radial-gradient(760px 460px at 52% 112%, rgba(119, 41, 83, 0.07), transparent 64%),
+    linear-gradient(180deg, #fdf2f7 0%, var(--el-bg-color-page) 42%);
+  background-attachment: fixed;
+}
+
+html.dark body {
+  background:
+    radial-gradient(1100px 560px at 88% -10%, rgba(233, 30, 99, 0.13), transparent 62%),
+    radial-gradient(900px 480px at -10% 6%, rgba(194, 24, 91, 0.10), transparent 60%),
+    radial-gradient(760px 460px at 52% 112%, rgba(119, 41, 83, 0.12), transparent 64%),
+    linear-gradient(180deg, #201419 0%, var(--el-bg-color-page) 42%);
+  background-attachment: fixed;
+}
+
+/* 悬浮小屏（quickpalette）宿主：html/body 默认全透明 —— 圆角面板四角直接透出桌面，
+   由 pywebview transparent 窗口提供透明画布，不依赖任何异步 JS（避免首帧不透明矩形） */
+html.palette-host,
+body.palette-host {
+  background: transparent;
+}
+/* 透明窗口不可用/被禁用时的兜底：柔和微粉画布，避免圆角外露出窗口黑底。
+   注意：不可用 background-attachment: fixed —— WebKitGTK 下 fixed 渐变背景渲染异常，只绘制上半部分，下方会露出窗口黑底 */
+html.palette-host.palette-opaque,
+body.palette-host.palette-opaque {
+  background: linear-gradient(180deg, #fdf2f7 0%, #f8f5f6 100%);
+}
+html.dark.palette-host.palette-opaque,
+html.dark body.palette-host.palette-opaque {
+  background: linear-gradient(180deg, #201419 0%, #161213 100%);
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 3px;
+  background: #d5cfca;
+  border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #909399;
+  background: #bdb3ab;
 }
 
 /* Dark scrollbar */
@@ -40,4 +159,268 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 /* Terminal styling */
 .xterm-viewport::-webkit-scrollbar {
   width: 8px;
+}
+
+/* ================================================================
+   通用工具类
+   ================================================================ */
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--el-text-color-primary);
+}
+.page-title::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--ub-rose), var(--ub-aubergine));
+  flex-shrink: 0;
+}
+
+/* ================================================================
+   Element Plus 全局组件覆盖
+   ================================================================ */
+
+/* ── 卡片：大圆角 + 柔和阴影 + 无边框扁平化 ── */
+.el-card {
+  border-radius: var(--radius-lg);
+  border: none;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.el-card.is-hover-shadow:hover,
+.el-card:hover {
+  box-shadow: var(--shadow-md);
+}
+.el-card__header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+/* ── 按钮：大圆角、主按钮品牌阴影 ── */
+.el-button {
+  border-radius: 10px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+.el-button--primary {
+  box-shadow: 0 2px 8px rgba(233, 30, 99, 0.22);
+}
+.el-button--primary:hover {
+  box-shadow: var(--shadow-brand);
+  transform: translateY(-1px);
+}
+.el-button.is-round {
+  border-radius: var(--radius-pill);
+}
+.el-button.is-circle {
+  border-radius: 50%;
+}
+
+/* ── 输入控件：大圆角 ── */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: var(--radius-md);
+  transition: box-shadow 0.2s ease;
+}
+.el-input__wrapper {
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
+}
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--el-color-primary-light-5) inset;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px var(--el-color-primary-light-8) !important;
+}
+
+/* ── 弹窗 / 消息框 / 抽屉：大圆角 + 柔和阴影 ── */
+.el-dialog {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.el-dialog__header {
+  padding: 20px 24px 8px;
+}
+.el-dialog__title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.el-dialog__body {
+  padding: 16px 24px;
+}
+.el-dialog__footer {
+  padding: 8px 24px 20px;
+}
+.el-message-box {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.el-message {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  border: none;
+}
+.el-notification {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.el-drawer {
+  border-radius: 0;
+}
+.el-drawer.ltr, .el-drawer.rtl {
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+}
+
+/* ── 表格：圆角、柔和表头 ── */
+.el-table {
+  border-radius: var(--radius-md);
+  --el-table-header-bg-color: var(--el-fill-color-light);
+  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+  overflow: hidden;
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+}
+.el-table .el-table__cell {
+  padding: 10px 0;
+}
+
+/* ── 标签：胶囊 ── */
+.el-tag {
+  border-radius: var(--radius-pill);
+  border: none;
+  font-weight: 500;
+}
+.el-tag--primary {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+/* ── 菜单（侧边栏）：大圆角菜单项 ── */
+.el-menu {
+  border-right: none;
+}
+.el-menu--vertical .el-menu-item {
+  border-radius: 10px;
+  margin: 4px 10px;
+  height: 44px;
+  line-height: 44px;
+  transition: all 0.18s ease;
+}
+.el-menu--vertical .el-menu-item:not(.is-active):hover {
+  background: var(--el-fill-color-light);
+}
+.el-menu--vertical .el-menu-item.is-active {
+  background: linear-gradient(120deg, var(--ub-rose), var(--ub-rose-soft));
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--shadow-brand);
+}
+.el-menu--collapse .el-menu-item {
+  margin: 4px 6px;
+  justify-content: center;
+}
+
+/* ── 统计卡片：快捷统计可视化 ── */
+.el-statistic {
+  background: var(--el-bg-color);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.el-statistic:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.el-statistic__head {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+.el-statistic__content {
+  font-weight: 700;
+}
+
+/* ── 提示条 / 空状态 ── */
+.el-alert {
+  border-radius: var(--radius-md);
+}
+.el-empty__image {
+  background: var(--el-color-primary-light-9);
+  border-radius: var(--radius-lg);
+}
+
+/* ── 进度条：圆角轨道 ── */
+.el-progress-bar__outer {
+  border-radius: var(--radius-pill);
+}
+.el-progress-bar__inner {
+  border-radius: var(--radius-pill);
+}
+
+/* ── 下拉面板 / 气泡 / 工具提示 ── */
+.el-popper.is-light,
+.el-popper.is-dark,
+.el-select-dropdown,
+.el-dropdown__popper {
+  border-radius: var(--radius-md);
+}
+.el-select-dropdown {
+  box-shadow: var(--shadow-md);
+}
+.el-select-dropdown__item.is-selected {
+  color: var(--el-color-primary);
+}
+
+/* ── 分页 ── */
+.el-pagination.is-background .el-pager li,
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .btn-next {
+  border-radius: 10px;
+}
+
+/* ── 表单校验 / 步骤 ── */
+.el-checkbox__inner,
+.el-radio__inner {
+  border-radius: 5px;
+}
+.el-radio__inner {
+  border-radius: 50%;
+}
+
+/* ── 折叠面板 ── */
+.el-collapse {
+  border: none;
+}
+.el-collapse-item__header {
+  border-radius: var(--radius-md);
+}
+
+/* ── 步骤条 ── */
+.el-step__head.is-finish .el-step__icon {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+
+/* ── 代码块 / 终端输出区 ── */
+code, pre {
+  font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
 }

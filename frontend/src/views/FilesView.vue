@@ -320,9 +320,9 @@ onMounted(() => { fetchDir(); fetchBookmarks(); fetchRecent(); fetchTemplates();
 .path-input { flex: 1; min-width: 200px; }
 .breadcrumb { margin-bottom: 12px; cursor: pointer; }
 .files-main { display: flex; gap: 16px; }
-.bookmarks-panel { width: 200px; flex-shrink: 0; border: 1px solid var(--el-border-color-light); border-radius: 8px; padding: 12px; background: var(--el-bg-color-overlay); }
+.bookmarks-panel { width: 200px; flex-shrink: 0; border: 1px solid var(--el-border-color-light); border-radius: var(--radius-md); padding: 12px; background: var(--el-bg-color-overlay); }
 .panel-header { font-weight: 600; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); display:flex; align-items:center }
-.bookmark-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.bookmark-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
 .bookmark-item:hover { background: var(--el-fill-color-light); }
 .bm-delete { margin-left: auto; opacity: 0; font-size: 12px; }
 .bookmark-item:hover .bm-delete { opacity: 1; }
@@ -333,7 +333,7 @@ onMounted(() => { fetchDir(); fetchBookmarks(); fetchRecent(); fetchTemplates();
 
 /* 文件夹窗口管理弹窗 */
 .folder-scroll { max-height: 55vh; overflow-y: auto; padding-right: 4px }
-.folder-card { border:1px solid var(--el-border-color-light); border-radius:8px; padding:12px; margin-bottom:8px }
+.folder-card { border:1px solid var(--el-border-color-light); border-radius:var(--radius-md); padding:12px; margin-bottom:8px }
 .folder-card-top { display:flex; align-items:center; gap:8px; margin-bottom:6px }
 .folder-card-path { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--el-text-color-secondary); margin-bottom:8px }
 .folder-card-path code { font-size:12px; background:var(--el-fill-color-light); padding:2px 6px; border-radius:4px }
