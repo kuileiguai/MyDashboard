@@ -110,9 +110,20 @@ async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
             cmds: list[str] = []
             for raw in lines:
                 c = _parse_command(raw)
-                if c and c not in existing:
+                if not c:
+                    continue
+                if c not in existing:
                     cmds.append(c)
                     existing.add(c)
+                else:
+                    # 命令已存在：不新增重复行，只更新时间戳，
+                    # 让"最近使用"排序能看到这条新出现的命令
+                    await db.execute(
+                        "UPDATE terminal_history SET created_at = CURRENT_TIMESTAMP "
+                        "WHERE id = (SELECT id FROM terminal_history WHERE command = ? "
+                        "ORDER BY id DESC LIMIT 1)",
+                        (c,),
+                    )
 
             if first_time:
                 # 首次只导入文件末尾最近的 N 条，避免历史全量涌入

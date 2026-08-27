@@ -176,7 +176,7 @@ async def list_history(limit: int = 100, session_id: str = "", favorite: bool = 
     if q:
         query += " AND command LIKE ?"
         params.append(f"%{q}%")
-    query += " ORDER BY is_favorite DESC, id DESC LIMIT ?"
+    query += " ORDER BY is_favorite DESC, created_at DESC, id DESC LIMIT ?"
     params.append(limit)
     async with get_db() as db:
         rows = await db.execute_fetchall(query, params)
@@ -314,13 +314,13 @@ async def lookup(q: str = "", limit: int = 30):
         if like:
             rows2 = await db.execute_fetchall(
                 "SELECT id, command, source, is_favorite FROM terminal_history "
-                "WHERE command LIKE ? ORDER BY is_favorite DESC, id DESC LIMIT ?",
+                "WHERE command LIKE ? ORDER BY is_favorite DESC, created_at DESC, id DESC LIMIT ?",
                 (like, limit),
             )
         else:
             rows2 = await db.execute_fetchall(
                 "SELECT id, command, source, is_favorite FROM terminal_history "
-                "ORDER BY is_favorite DESC, id DESC LIMIT ?",
+                "ORDER BY is_favorite DESC, created_at DESC, id DESC LIMIT ?",
                 (limit,),
             )
         for r in rows2:

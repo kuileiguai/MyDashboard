@@ -141,6 +141,14 @@
 ### 1. 安装依赖
 
 ```bash
+# 一键预检 + 自动补齐（推荐新机器先跑这个）
+./scripts/check-env.sh            # 检查缺什么，输出 PASS/WARN/FAIL 和安装命令
+./scripts/check-env.sh --fix      # 自动补齐 venv / pip 依赖 / 前端 dist（sudo apt 部分需手动）
+```
+
+手动安装等价命令：
+
+```bash
 # 后端
 cd backend
 python3 -m venv .venv
