@@ -186,6 +186,12 @@
         </el-descriptions-item>
         <el-descriptions-item label="工作目录" :span="2">
           <code>{{ gpuDetail.cwd || '-' }}</code>
+          <div v-if="!gpuDetail.cwd && gpuDetail.cwd_error_text" class="gpu-cwd-hint">
+            {{ gpuDetail.cwd_error_text }}
+          </div>
+          <div v-if="!gpuDetail.cwd && gpuDetail.cwd_guess" class="gpu-cwd-hint">
+            推断目录: {{ gpuDetail.cwd_guess }}
+          </div>
         </el-descriptions-item>
         <el-descriptions-item label="完整命令" :span="2">
           <pre class="gpu-cmd">{{ gpuDetail.cmdline_str }}</pre>
@@ -201,7 +207,9 @@
         <el-button @click="gpuDetailVisible = false">关闭</el-button>
         <el-button v-if="gpuDetail.cwd" @click="copyText(gpuDetail.cwd)">复制工作目录</el-button>
         <el-button v-if="gpuDetail.cmdline_str" @click="copyText(gpuDetail.cmdline_str)">复制启动命令</el-button>
-        <el-button v-if="gpuDetail.cwd" type="primary" @click="openGpuProcFolder(gpuDetail.pid)">打开目录</el-button>
+        <el-button v-if="gpuDetail.cwd || gpuDetail.cwd_guess" type="primary" @click="openGpuProcFolder(gpuDetail.pid)">
+          {{ gpuDetail.cwd ? '打开目录' : '打开推断目录' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -481,8 +489,9 @@ async function showGpuProcDetail(pid) {
 async function openGpuProcFolder(pid) {
   try {
     const { data } = await api.post(`/system/gpu/proc/${pid}/open-folder`)
-    if (data.ok) ElMessage.success('已打开: ' + data.path)
-    else ElMessage.error(data.error || '打开失败')
+    if (!data.ok) { ElMessage.error(data.error || '打开失败'); return }
+    if (data.guessed) ElMessage.warning(`工作目录不可读，已打开推断目录: ${data.path}`)
+    else ElMessage.success('已打开: ' + data.path)
   } catch (_) { ElMessage.error('请求失败') }
 }
 
@@ -529,6 +538,7 @@ onUnmounted(() => {
 .gpu-proc-mem { color: var(--el-text-color-secondary); font-size: 11px; flex-shrink: 0; }
 .gpu-proc-actions { display: flex; flex-shrink: 0; }
 .gpu-cmd { background: var(--el-fill-color-light); padding: 8px; border-radius: var(--radius-sm); font-size: 12px; word-break: break-all; }
+.gpu-cwd-hint { margin-top: 4px; font-size: 12px; color: var(--el-color-warning); }
 .disk-row { padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .disk-row:last-child { border-bottom: none; }
 .disk-treemap { width: 100%; height: 260px; }

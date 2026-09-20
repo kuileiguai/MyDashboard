@@ -214,6 +214,66 @@ def _du_size(path: str) -> int:
 
 # ── GPU 进程详情服务 ──
 
+# 这些系统目录即便存在也不是用户的工程目录，推断"启动目录"时跳过
+_SYSTEM_PATHS = {
+    "/", "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
+    "/etc", "/boot", "/proc", "/sys", "/dev", "/run", "/snap", "/lost+found",
+}
+
+
+def _is_system_path(path: str) -> bool:
+    p = path.rstrip("/") or "/"
+    if p in _SYSTEM_PATHS:
+        return True
+    return any(p.startswith(root + "/") for root in _SYSTEM_PATHS if root != "/")
+
+
+def guess_work_dir(cmdline: list, exe: str = "") -> tuple[str, str]:
+    """cwd 不可读时，从命令行/可执行文件推断进程的工程目录。
+
+    跨用户（进程属于 root、或位于其他命名空间如容器内）时 /proc/<pid>/cwd 的
+    readlink 需要 ptrace 权限，会 EACCES；而同期的 cmdline / exe 仍可读——这正是
+    "能看到是哪个脚本启动的，却打不开工作目录"的原因。
+
+    取命令行里第一个"存在的、非系统目录的绝对路径"：是目录就用它，是文件就用其父目录。
+    返回 (path, note)；path 为空表示推断不出来。
+    """
+    for arg in cmdline or []:
+        if not arg.startswith("/") or arg.startswith("-") or _is_system_path(arg):
+            continue
+        if os.path.isdir(arg):
+            return arg, f"cwd 不可读，按命令行参数推断: {arg}"
+        if os.path.isfile(arg):
+            parent = os.path.dirname(arg)
+            if parent and not _is_system_path(parent) and os.path.isdir(parent):
+                return parent, f"cwd 不可读，按命令行中的文件推断: {arg} → {parent}"
+    # 兜底：可执行文件自身（如 /opt/myapp/bin/train），但跳过 bin/sbin 这类目录
+    if exe.startswith("/") and not _is_system_path(exe):
+        parent = os.path.dirname(exe)
+        if (
+            parent
+            and os.path.basename(parent) not in ("bin", "sbin", "libexec", "lib", "lib64")
+            and os.path.isdir(parent)
+        ):
+            return parent, f"cwd 不可读，按可执行文件推断: {exe} → {parent}"
+    return "", ""
+
+
+def _cwd_error_text(exc: Exception) -> str:
+    """把 cwd 读取失败翻译成能给用户看的原因"""
+    if isinstance(exc, psutil.AccessDenied):
+        return (
+            "无权读取该进程的工作目录（/proc/<pid>/cwd 需要 ptrace 权限）："
+            "该进程属于其他用户（如 root）或位于其他命名空间（如容器内）。"
+            "可复制启动命令，或让后端以相同用户/root 运行。"
+        )
+    if isinstance(exc, psutil.ZombieProcess):
+        return "该进程处于僵尸态，无法读取工作目录"
+    if isinstance(exc, psutil.NoSuchProcess):
+        return "该进程已退出"
+    return f"读取工作目录失败: {exc}"
+
+
 def _enrich_process_info(proc_info: dict):
     """从 /proc 和 psutil 补充进程详细信息"""
     pid = proc_info.get("pid", 0)
@@ -252,8 +312,15 @@ def get_gpu_process_detail(pid: int) -> dict:
         result["create_time"] = p.create_time()
         try:
             result["cwd"] = p.cwd()
-        except Exception:
+        except Exception as e:
+            # 跨用户/容器时 /proc/<pid>/cwd 会 EACCES，别把原因吞掉
             result["cwd"] = ""
+            result["cwd_error"] = type(e).__name__
+            result["cwd_error_text"] = _cwd_error_text(e)
+        try:
+            result["exe"] = p.exe()
+        except Exception:
+            result["exe"] = ""
         try:
             result["cmdline"] = p.cmdline()
             result["cmdline_str"] = " ".join(p.cmdline())
@@ -268,6 +335,12 @@ def get_gpu_process_detail(pid: int) -> dict:
             result["status"] = p.status()
         except Exception:
             result["status"] = ""
+        # cwd 读不到（跨用户/容器）时，按命令行推断一个能打开的目录
+        if not result.get("cwd"):
+            guess, note = guess_work_dir(result.get("cmdline") or [], result.get("exe", ""))
+            if guess:
+                result["cwd_guess"] = guess
+                result["cwd_guess_note"] = note
         # 父进程链
         chain = []
         cur = p

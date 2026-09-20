@@ -16,6 +16,7 @@ from pathlib import Path
 
 from config import HISTORY_GLOBAL, HISTORY_MAX_ENTRIES, HISTORY_SYNC_INTERVAL
 from database import get_db
+from services.history_time import next_ts
 
 logger = logging.getLogger("history_sync")
 
@@ -23,6 +24,8 @@ _OFFSET_PREFIX = "history_sync_offset:"
 
 # zsh 扩展历史格式: ": 1234567890:0;command"
 _ZSH_TS_RE = re.compile(r"^: \d+:\d+;(.*)$")
+# bash 设置 HISTTIMEFORMAT 时，会在每条命令前单独写一行 "#<epoch>"（不是命令）
+_BASH_TS_RE = re.compile(r"^#\d{9,}$")
 
 
 def _history_files() -> list[Path]:
@@ -49,6 +52,8 @@ def _history_files() -> list[Path]:
 
 def _parse_command(raw: str) -> str | None:
     """把一行历史记录解析为命令文本，非法/超长返回 None"""
+    if _BASH_TS_RE.match(raw.strip()):
+        return None  # bash HISTTIMEFORMAT 的时间戳行，不是命令
     m = _ZSH_TS_RE.match(raw)
     if m:
         raw = m.group(1)
@@ -116,13 +121,13 @@ async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
                     cmds.append(c)
                     existing.add(c)
                 else:
-                    # 命令已存在：不新增重复行，只更新时间戳，
-                    # 让"最近使用"排序能看到这条新出现的命令
+                    # 命令已存在：不新增重复行，只把时间戳刷新为最新，
+                    # 让它排到"最近使用"的最前面
                     await db.execute(
-                        "UPDATE terminal_history SET created_at = CURRENT_TIMESTAMP "
+                        "UPDATE terminal_history SET created_at = ? "
                         "WHERE id = (SELECT id FROM terminal_history WHERE command = ? "
                         "ORDER BY id DESC LIMIT 1)",
-                        (c,),
+                        (next_ts(), c),
                     )
 
             if first_time:
@@ -131,8 +136,9 @@ async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
 
             for c in cmds:
                 await db.execute(
-                    "INSERT INTO terminal_history (session_id, command, cwd, source) VALUES (?,?,?,?)",
-                    ("", c, "", "shell"),
+                    "INSERT INTO terminal_history (session_id, command, cwd, source, created_at) "
+                    "VALUES (?,?,?,?,?)",
+                    ("", c, "", "shell", next_ts()),
                 )
                 added += 1
 

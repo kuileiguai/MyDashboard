@@ -175,19 +175,19 @@ function createXtermInstance(sid, el) {
   nextTick(() => fitAddon.fit())
 
   // Handle input
-  const inputBuffer = { text: '', lastCommit: 0 }
+  const inputBuffer = { text: '' }
   term.onData((data) => {
     sendTerminalInput(sid, data)
-    // 命令捕获：累积输入，Enter 提交到历史
+    // 命令捕获：累积输入，Enter 提交到历史。
+    // 不做"2 秒内重复命令不记录"的节流——后端按 command 去重并把时间戳刷新到最新，
+    // 重复执行同一条命令也会把它提到历史最前面。
     for (const ch of data) {
       if (ch === '\r' || ch === '\n') {
         const cmd = inputBuffer.text.trim()
-        if (cmd && cmd.length > 1 && Date.now() - inputBuffer.lastCommit > 2000) {
-          try {
-            api.post('/commands/history', { session_id: sid, command: cmd, cwd: '', source: 'terminal' })
-          } catch (_) {}
+        if (cmd && cmd.length > 1) {
+          api.post('/commands/history', { session_id: sid, command: cmd, cwd: '', source: 'terminal' })
+            .catch(() => {})
         }
-        if (cmd) inputBuffer.lastCommit = Date.now()
         inputBuffer.text = ''
       } else if (ch === '\x7f' || ch === '\b') {
         inputBuffer.text = inputBuffer.text.slice(0, -1)

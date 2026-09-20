@@ -280,6 +280,46 @@ WebSocket 端点：
 | `HISTORY_SYNC_INTERVAL` | `5.0s` | shell 历史同步间隔 |
 | `DISK_ALERT_THRESHOLD` | `0.90` | 磁盘使用率预警阈值 |
 
+环境变量名统一带 `DASH_` 前缀（如 `DASH_HISTORY_SYNC_INTERVAL`），上表列的是 `config.py` 里的常量名。
+
+## 让终端命令实时进入历史
+
+四个来源都会自动收录进「终端历史」，且**同一条命令只保留一行**——重复执行不会堆出重复行，而是把它的时间戳刷新为最新、排到历史最前面（时间戳为毫秒精度，同秒连敲也能正确排序）。
+
+| 来源 | 是否实时 | 需要设置 |
+|------|----------|----------|
+| 面板内终端（Dashboard 自带 PTY） | 实时，回车即上报 | 无 |
+| 外部终端「发送命令」按钮 | 实时 | 无 |
+| 命令手册「发送」 | 实时 | 无 |
+| 外部终端里手敲的命令 | 后台增量同步历史文件 | 见下 |
+
+前三者由前端在命令提交时直接调 `POST /commands/history`。外部终端里手敲的命令只能从 shell 历史文件里同步，而 **bash 默认只在 shell 退出时才写 `~/.bash_history`**，所以必须让 shell 每条命令执行后立即落盘：
+
+```bash
+# ~/.bashrc
+shopt -s histappend
+PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+```
+
+```zsh
+# ~/.zshrc
+setopt INC_APPEND_HISTORY      # 每条命令执行后立即写入；共享多终端可用 SHARE_HISTORY
+```
+
+之后后台任务会按 `DASH_HISTORY_SYNC_INTERVAL`（默认 5 秒）增量读取，想更接近实时就调小：
+
+```bash
+DASH_HISTORY_SYNC_INTERVAL=1 ./scripts/start.sh        # 1 秒一轮
+DASH_HISTORY_GLOBAL=1 ./scripts/start.sh               # 顺带同步 /home/* 下其他用户的历史（需有读权限）
+DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史文件时最多导入多少条
+```
+
+说明：
+
+- 只读取 `~/.bash_history` / `~/.zsh_history`（`HISTORY_GLOBAL=1` 时扩展为 `/home/*`）；自定义 `HISTFILE` 不在此列。
+- 若设置了 `HISTTIMEFORMAT`，bash 会写入 `#<epoch>` 时间戳行，这类行会被忽略，不会被当成命令收录。
+- 同步进度（每个历史文件的字节偏移）存在 `settings` 表里，重启服务后会接着上次位置继续，离线期间敲的命令也会补录。
+
 ## 安全设计
 
 - 仅绑定 `127.0.0.1`，不暴露外网；无遥测、无外网回调

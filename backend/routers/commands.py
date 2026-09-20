@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from database import get_db
+from services.history_time import next_ts
 
 router = APIRouter()
 
@@ -185,15 +186,33 @@ async def list_history(limit: int = 100, session_id: str = "", favorite: bool = 
 
 @router.post("/history")
 async def record_history(body: HistoryRecord):
-    """前端在发送命令到终端时调用此接口记录"""
+    """前端在发送命令到终端时调用此接口记录。
+
+    同一条命令只保留一行：已存在就把时间戳刷新为当前（毫秒精度）并顺延到历史最前面，
+    而不是每次执行都堆积一条重复行。排序见 list_history。
+    """
     cmd = body.command.strip()
     if not cmd or len(cmd) > 500:
         return {"ok": True}
     async with get_db() as db:
-        await db.execute(
-            "INSERT INTO terminal_history (session_id, command, cwd, source) VALUES (?,?,?,?)",
-            (body.session_id, cmd, body.cwd, body.source),
+        rows = await db.execute_fetchall(
+            "SELECT id FROM terminal_history WHERE command = ? ORDER BY id DESC LIMIT 1", (cmd,)
         )
+        if rows:
+            await db.execute(
+                "UPDATE terminal_history SET created_at = ?, source = ?, "
+                "session_id = CASE WHEN ? = '' THEN session_id ELSE ? END, "
+                "cwd = CASE WHEN ? = '' THEN cwd ELSE ? END "
+                "WHERE id = ?",
+                (next_ts(), body.source, body.session_id, body.session_id,
+                 body.cwd, body.cwd, rows[0]["id"]),
+            )
+        else:
+            await db.execute(
+                "INSERT INTO terminal_history (session_id, command, cwd, source, created_at) "
+                "VALUES (?,?,?,?,?)",
+                (body.session_id, cmd, body.cwd, body.source, next_ts()),
+            )
         await db.commit()
     return {"ok": True}
 

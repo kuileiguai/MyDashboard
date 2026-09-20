@@ -172,9 +172,11 @@ async function importShellHistory() {
     const cmds = data.commands || []
     if (!cmds.length) { ElMessage.info(data.message || 'shell 历史为空'); return }
     // 逐条写入历史（去重由后端 list 不保证，但写入时跳过与现有重复的）
+    // 注意顺序：cmds 是"最近在前"，要反过来从旧到新写，后端每写一条时间戳递增，
+    // 这样最近用过的才会排在历史列表最前面
     let added = 0
     const existing = new Set(history.value.map(h => h.command))
-    for (const cmd of cmds) {
+    for (const cmd of [...cmds].reverse()) {
       if (existing.has(cmd)) continue
       await api.post('/commands/history', { command: cmd, source: 'shell' })
       existing.add(cmd)

@@ -419,9 +419,64 @@ def _ensure_loopback_no_proxy():
         pass  # 无 D-Bus 会话/只读 dconf 时跳过，不影响悬浮小屏本身
 
 
+def _patch_pywebview_qt_permission():
+    """修复 pywebview 6.2.1 的 Qt 后端在 Qt6（PyQt6 / PySide6）下的崩溃。
+
+    webview/platforms/qt.py 的 onFeaturePermissionRequested() 已按 Qt6 写
+    Feature 枚举，策略参数却仍是裸 int：
+
+        self.setFeaturePermission(url, feature, 2)   # 上游写法
+        TypeError: argument 3 has unexpected type 'int'
+
+    Qt6 的 QWebEnginePage.setFeaturePermission() 只接受 PermissionPolicy 枚举，
+    于是每次页面请求权限（如 localStorage / 媒体采集）都会在回调里抛 TypeError。
+    上游 master 至今未修，故在此替换该方法，行为与上游一致：媒体采集放行，其余拒绝。
+
+    未安装 Qt 绑定时（实际走 GTK 后端）静默跳过。
+    """
+    try:
+        from webview.platforms import qt as _qt
+    except Exception:
+        return  # 无 Qt 绑定：实际使用 GTK 后端，无需修补
+
+    if not getattr(_qt, "is_webengine", False):
+        return  # QtWebKit（旧渲染器）不做权限回调，无需修补
+
+    # 上游把 WebPage 定义在 BrowserView 内部（webview.platforms.qt.BrowserView.WebPage）
+    webpage_cls = getattr(getattr(_qt, "BrowserView", None), "WebPage", None)
+    if webpage_cls is None:
+        webpage_cls = getattr(_qt, "WebPage", None)
+    if webpage_cls is None or not hasattr(webpage_cls, "onFeaturePermissionRequested"):
+        return  # 结构与预期不符：不动上游代码
+
+    qpage = _qt.QWebPage
+    # Qt6: QWebEnginePage.Feature.MediaAudioCapture；Qt5: QWebEnginePage.MediaAudioCapture
+    feature_enum = getattr(qpage, "Feature", qpage)
+    media_features = tuple(
+        v
+        for v in (
+            getattr(feature_enum, name, None)
+            for name in ("MediaAudioCapture", "MediaVideoCapture", "MediaAudioVideoCapture")
+        )
+        if v is not None
+    )
+    # Qt6: QWebEnginePage.PermissionPolicy.PermissionXxx；Qt5: QWebEnginePage.PermissionXxx
+    policy_enum = getattr(qpage, "PermissionPolicy", qpage)
+    granted = getattr(policy_enum, "PermissionGrantedByUser", None)
+    denied = getattr(policy_enum, "PermissionDeniedByUser", None)
+    if granted is None or denied is None:
+        return  # 绑定不提供该枚举：保持上游行为
+
+    def onFeaturePermissionRequested(self, url, feature):
+        self.setFeaturePermission(url, feature, granted if feature in media_features else denied)
+
+    webpage_cls.onFeaturePermissionRequested = onFeaturePermissionRequested
+
+
 def main():
     global _WINDOW
     _ensure_loopback_no_proxy()
+    _patch_pywebview_qt_permission()
     # 禁用全局 easy_drag（否则内容区/滚动条按住拖动会移动整个窗口），
     # 改用指定拖动区域：仅顶部 .drag-region 拖动条可移动窗口
     webview.settings['DRAG_REGION_SELECTOR'] = '.drag-region'
