@@ -303,6 +303,22 @@ def get_custom_env_paths() -> list[str]:
         return []
 
 
+def _safe_exists(path) -> bool:
+    """安全判断路径是否存在：权限不足/符号链接异常等一律视为不存在"""
+    try:
+        return os.stat(path, follow_symlinks=False if not follow else True) is not None
+    except OSError:
+        return False
+
+
+def _safe_isdir(path) -> bool:
+    """安全判断是否为目录，异常时返回 False"""
+    try:
+        return os.path.isdir(path)
+    except OSError:
+        return False
+
+
 def scan_custom_paths(paths: list[str]) -> list[dict]:
     """扫描指定路径下所有虚拟环境（.venv / venv / 含 pyvenv.cfg 的目录）"""
     results = []

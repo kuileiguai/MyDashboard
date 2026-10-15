@@ -61,7 +61,13 @@
       <el-empty v-else description="tmux 未运行" />
     </el-dialog>
     <!-- 外部终端 Dialog -->
-    <el-dialog v-model="showExternal" title="外部终端窗口 (本机)" width="850px">
+    <el-dialog v-model="showExternal" title="外部终端窗口（服务器桌面 :0）" width="850px">
+      <el-alert v-if="isRemote" type="info" :closable="false" style="margin-bottom:12px"
+        title="这些窗口属于服务器桌面（X11）"
+        description="聚焦 / 关闭只在服务器端生效，本机看不到画面。要在当前机器里操作它们，请用「接管到浮窗」。" />
+      <el-alert v-if="!extTmuxAvailable" type="warning" :closable="false" style="margin-bottom:12px"
+        title="接管功能不可用"
+        description="服务端未安装 tmux，请执行 sudo apt install tmux 后重启服务。" />
       <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center">
         <el-button size="small" @click="fetchExternalTerminals" :loading="extLoading"><el-icon><Refresh /></el-icon> 刷新</el-button>
         <el-input v-model="extFilter" placeholder="搜索终端（标题/别称/PID/路径）..." clearable size="small" style="flex:1;max-width:320px"
@@ -130,6 +136,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import api from '../api'
 import { sendTerminalInput, subscribeTerminal } from '../api/ws'
+import { auth, refreshAuth } from '../stores/auth'
 
 // State
 const sessions = ref([])
@@ -320,6 +327,7 @@ const extAliasText = ref('')
 const extFilter = ref('')
 const extDepMissing = ref(false)
 const extInstalling = ref(false)
+const extTmuxAvailable = ref(true)
 
 const filteredExternalTerms = computed(() => {
   if (!extFilter.value.trim()) return externalTerms.value

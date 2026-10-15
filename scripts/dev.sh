@@ -10,14 +10,19 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm use 20 > /dev/null 2>&1
 
-echo "=== 启动后端 (FastAPI :8787) ==="
+# 开发模式下远程请求经由 Vite 代理转发，来源 IP 只能从 X-Forwarded-For 还原，
+# 故后端开启 TRUST_PROXY；后端本身仍只监听 127.0.0.1，避免被绕过代理直连。
+export DASH_TRUST_PROXY=1
+DASH_HOST="${DASH_HOST:-0.0.0.0}"
+
+echo "=== 启动后端 (FastAPI :8787，仅本机监听) ==="
 cd "$PROJECT_DIR/backend"
 .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8787 --reload &
 BACKEND_PID=$!
 
 echo "=== 启动前端 (Vite :5173) ==="
 cd "$PROJECT_DIR/frontend"
-npx vite --host 127.0.0.1 &
+npx vite --host "$DASH_HOST" &
 FRONTEND_PID=$!
 
 # 可选：启动悬浮小屏（需图形会话 X11，默认关闭）
@@ -30,10 +35,16 @@ if [ "${DASH_PALETTE:-0}" = "1" ]; then
   PALETTE_PID=$!
 fi
 
+LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
 echo ""
 echo "前端: http://localhost:5173"
-echo "后端: http://localhost:8787"
+[ -n "$LAN_IP" ] && [ "$DASH_HOST" = "0.0.0.0" ] && echo "局域网: http://$LAN_IP:5173"
+echo "后端: http://localhost:8787（仅本机，远程请走 Vite 端口）"
 echo "API文档: http://localhost:8787/docs"
+if [ -z "${DASH_AUTH_PASSWORD:-}" ] && [ -z "${DASH_AUTH_PASSWORD_HASH:-}" ]; then
+  echo "[警告] 未设置 DASH_AUTH_PASSWORD —— 非本机访问会被拒绝。" >&2
+fi
 [ -n "${PALETTE_PID:-}" ] && echo "悬浮小屏: 已启动（快捷键 Ctrl+Shift+Space）"
 echo ""
 echo "按 Ctrl+C 停止所有服务"

@@ -4,7 +4,7 @@
 
 一个运行在 `http://localhost:8787` 的本地 Web 工作台，把开发者日常高频操作——**命令速查、文件管理、端口/进程、终端、系统监控、日志、环境、SSH、Docker**——统一到一个页面里：可看、可搜、可点、可拖。
 
-面向单用户（开发者本人），基准环境 **Ubuntu 22.04 + GNOME**，仅监听 `127.0.0.1`，零外网依赖。
+面向单用户（开发者本人），基准环境 **Ubuntu 22.04 + GNOME**，零外网依赖。默认监听 `0.0.0.0:8787` 以便局域网内其他机器访问，但**本机访问免登录、非本机访问需账号密码**（未配置口令时非本机一律拒绝）。
 
 ## 解决什么问题
 
@@ -130,6 +130,74 @@
 
 三类数据流：CRUD 走 REST；监控指标 / 日志增量走服务端 WS 推送；终端 stdin/stdout 走双向 WS。
 
+## 部署
+
+### 先理解它的权限等级
+
+Deckpit 以**运行它的那个用户**的身份工作，能力边界 = 该用户的 shell：
+
+| 能力 | 范围 |
+|------|------|
+| 执行命令 | 任意命令（内嵌 PTY 终端、向外部终端注入、服务启动脚本） |
+| 文件读写 | 该用户有权访问的全部路径（默认 `ALLOWED_ROOTS = /`） |
+| 进程管理 | 结束该用户的任意进程、管理 systemd 用户服务 |
+| Docker | 若用户在 `docker` 组，等同 root（可挂载宿主机目录） |
+| 敏感信息 | 读取项目 `.env`、SSH 配置 |
+
+三条红线：**不要用 root 运行**、**不要把端口暴露到公网**、**口令不要用弱密码**。
+
+### 一键部署（新机器推荐）
+
+```bash
+./scripts/setup.sh
+```
+
+向导依次处理（每一步都会先显示将要执行的命令再确认）：
+
+| 步骤 | 内容 |
+|------|------|
+| 1 权限确认 | root 运行时告警并建议中止；docker 组用户额外提示 |
+| 2 依赖预检 | 调用 `check-env.sh`，输出 PASS/WARN/FAIL |
+| 3 系统依赖 | `sudo apt install` 补齐 `ss/curl/tmux/wmctrl/xdotool/xprop` |
+| 4 运行环境 | 建 `backend/.venv`、装 pip 依赖、构建 `frontend/dist` |
+| 5 监听范围 | 选 `0.0.0.0`（局域网，非本机来源需登录）或 `127.0.0.1`（仅本机） |
+| 6 登录口令 | 生成 20 位随机口令写入 `~/.config/deckpit.env`（权限 600） |
+| 7 防火墙 | `sudo ufw allow from <内网段> to any port 8787`，只放行内网 |
+| 8 开机自启 | 安装 systemd 用户服务并 enable，输出日志命令 |
+
+非交互（全部采用推荐默认值）：`DASH_SETUP_YES=1 ./scripts/setup.sh`
+
+部署后随时自检：`./scripts/check-env.sh`（含口令/权限/防火墙等安全项核对）。
+
+### 依赖清单（手动部署时对照）
+
+| 依赖 | 用途 | 缺失后果 | 安装 |
+|------|------|----------|------|
+| uv | 管理 Python 环境 | 无法创建 venv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Python ≥ 3.10 | 后端运行时 | 无法启动 | 随 uv 安装 |
+| Node ≥ 18 | 构建前端 dist | dist 缺失则生产模式无法运行 | `nvm install 20` |
+| `ss`（iproute2） | 端口监控 | 端口模块不可用 | `sudo apt install -y iproute2` |
+| `curl` | 健康检查 / 依赖安装 | 部分检查跳过 | `sudo apt install -y curl` |
+| **tmux** | **远程接管外部终端** | 接管按钮禁用 | `sudo apt install -y tmux` |
+| `wmctrl`/`xdotool`/`xprop` | 外部终端窗口控制 | 外部终端列表为空 | `sudo apt install -y wmctrl xdotool x11-utils` |
+| **ffmpeg** | **外部终端只读查看**（抓窗口画面） | 无法查看终端内容 | `sudo apt install -y ffmpeg` |
+| docker | Docker 模块 | 仅该模块不可用 | 见官方文档 |
+| `nvidia-smi` | GPU 监控 | 无 N 卡时属正常 | 显卡驱动自带 |
+| pywebview + GUI 后端 | 悬浮小屏 | 小屏不可用 | 见「悬浮小屏」小节 |
+
+服务**运行本身不需要 sudo**；sudo 仅用于安装依赖与配置防火墙。
+
+### 部署产生的配置
+
+`~/.config/deckpit.env`（权限 600，由 setup.sh 生成）：
+
+```bash
+DASH_HOST=0.0.0.0
+DASH_PORT=8787
+DASH_AUTH_USER=admin
+DASH_AUTH_PASSWORD=自动生成的强口令
+```
+
 ## 快速开始
 
 ### 环境要求
@@ -175,7 +243,7 @@ npm install
 ./scripts/start.sh
 ```
 
-构建前端 dist 并由后端静态托管，单端口 `http://localhost:8787` 运行。
+构建前端 dist 并由后端静态托管，单端口 `http://localhost:8787` 运行；从其他机器访问请用 `http://<本机内网IP>:8787`（需先设置 `DASH_AUTH_PASSWORD`，见[局域网 / 远程访问](#局域网--远程访问)）。
 
 ### 4. 悬浮小屏（可选）
 
@@ -193,14 +261,23 @@ python scripts/quickpalette.py
 
 ### 5. 开机自启（systemd user service）
 
+unit 由 `scripts/setup.sh` 第 5 步按实际安装路径生成并写入 `~/.config/systemd/user/deckpit.service`
+（路径含空格会自动转义，无需手工修改）：
+
 ```bash
-mkdir -p ~/.config/systemd/user
-cp deploy/deckpit.service ~/.config/systemd/user/
-# 按实际安装路径修改 unit 文件中的 WorkingDirectory
-systemctl --user daemon-reload
-systemctl --user enable --now deckpit
+./scripts/setup.sh              # 交互式，走到「5. 开机自启」选 Y
+DASH_SETUP_YES=1 ./scripts/setup.sh   # 非交互：全部采用推荐默认值
+```
+
+常用命令：
+
+```bash
+systemctl --user status deckpit
+systemctl --user restart deckpit
 journalctl --user -u deckpit -f   # 查看日志
 ```
+
+注销后仍需保持运行（服务器场景）：`sudo loginctl enable-linger $USER`
 
 ## 项目结构
 
@@ -208,6 +285,7 @@ journalctl --user -u deckpit -f   # 查看日志
 Deckpit/
 ├── backend/
 │   ├── main.py               # FastAPI 入口：路由注册·预置数据·后台任务·SPA 托管
+│   ├── auth.py               #   远程访问认证：按来源判定 + 口令校验 + 会话 + ASGI 中间件
 │   ├── config.py             # 全局配置（端口/采样间隔/回滚行数等，环境变量可覆盖）
 │   ├── database.py           # SQLite 连接与 14 张表建表迁移
 │   ├── routers/              # 10 个 REST 路由模块
@@ -245,8 +323,6 @@ Deckpit/
 │   ├── dev.sh               # 开发模式（前后端并行）
 │   ├── start.sh             # 生产模式（构建+托管，端口预检）
 │   └── quickpalette.py      # 悬浮小屏宿主（pywebview+托盘+吸附）
-├── deploy/
-│   └── deckpit.service       # systemd 用户服务单元
 ├── data/
 │   └── dashboard.db         # SQLite 数据库
 ├── PRD-v1.md                # 需求基线（M0–M9，92 条 FR）
@@ -281,6 +357,68 @@ WebSocket 端点：
 | `DISK_ALERT_THRESHOLD` | `0.90` | 磁盘使用率预警阈值 |
 
 环境变量名统一带 `DASH_` 前缀（如 `DASH_HISTORY_SYNC_INTERVAL`），上表列的是 `config.py` 里的常量名。
+
+## 局域网 / 远程访问
+
+默认监听 `0.0.0.0:8787`，但**认证策略区分来源**：
+
+| 访问来源 | 是否需要登录 |
+|----------|--------------|
+| 服务端本机（`127.0.0.1` / `::1`） | 免登录，与以前完全一致 |
+| 其他机器（局域网 / 公网） | 必须账号密码登录 |
+
+### 开启远程登录
+
+```bash
+DASH_AUTH_PASSWORD='你的强密码' ./scripts/run-prod.sh
+# 自定义用户名：DASH_AUTH_USER=dev DASH_AUTH_PASSWORD=xxx ./scripts/run-prod.sh
+# 不想用明文：DASH_AUTH_PASSWORD_HASH=$(echo -n '密码' | sha256sum | awk '{print $1}')
+```
+
+启动后会打印可访问地址：
+
+```
+监听: 0.0.0.0:8787
+本机访问: http://localhost:8787
+局域网访问: http://192.168.0.159:8787
+```
+
+**未设置口令时，非本机访问一律返回 403（fail-closed）**，不会出现"已开放但无口令"的窗口期。
+
+只想退回纯本机访问：
+
+```bash
+DASH_HOST=127.0.0.1 ./scripts/run-prod.sh
+```
+
+### 防火墙（建议只放行内网段）
+
+```bash
+sudo ufw allow from 192.168.0.0/24 to any port 8787   # 仅局域网段
+sudo ufw status
+```
+
+### 相关配置项
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `DASH_HOST` | `0.0.0.0` | 监听地址 |
+| `DASH_AUTH_USER` | `admin` | 登录用户名 |
+| `DASH_AUTH_PASSWORD` | 空 | 登录口令（空 = 拒绝非本机访问） |
+| `DASH_AUTH_PASSWORD_HASH` | 空 | 口令的 sha256 摘要，优先级高于上一项 |
+| `DASH_AUTH_SESSION_TTL` | `43200` | 会话有效期（秒） |
+| `DASH_AUTH_LOCAL_BYPASS` | `1` | 本机来源免登录，置 `0` 则本机也要登录 |
+| `DASH_AUTH_MAX_FAILS` | `5` | 同一来源连续失败上限，超出锁定 |
+| `DASH_AUTH_LOCK_SECONDS` | `300` | 触发失败上限后的锁定时长（秒） |
+| `DASH_TRUST_PROXY` | `0` | 用 `X-Forwarded-For` 判定来源；仅挂可信反代时置 `1` |
+
+说明与限制：
+
+- 会话保存在**服务端内存**，服务重启后所有远程客户端需重新登录。
+- 认证 Cookie 为 `HttpOnly` + `SameSite=Lax`，前端静态资源放行以便未登录时能渲染登录页；真正受保护的是 `/api/*`（除 `/api/auth/*`）、`/ws/*`、`/docs`、`/openapi.json`。
+- 未登录的 WebSocket 握手会被以 `1008` 关闭，前端据此停止重连并跳转登录页。
+- `DASH_TRUST_PROXY=1` 时伪造 `X-Forwarded-For: 127.0.0.1` 即可绕过认证，**仅在你确实挂了可信反向代理时才开启**（开发模式由 `scripts/dev.sh` 自动开启，因为请求经 Vite 代理转发，后端本身仍只监听 `127.0.0.1`）。
+- 传输为明文 HTTP，跨公网使用请在前面套一层 HTTPS 反向代理。
 
 ## 让终端命令实时进入历史
 
@@ -320,9 +458,40 @@ DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史�
 - 若设置了 `HISTTIMEFORMAT`，bash 会写入 `#<epoch>` 时间戳行，这类行会被忽略，不会被当成命令收录。
 - 同步进度（每个历史文件的字节偏移）存在 `settings` 表里，重启服务后会接着上次位置继续，离线期间敲的命令也会补录。
 
+## 外部终端接管（远程操作服务器上的终端）
+
+「终端中心 → 外部终端」列出的窗口属于**服务器桌面（X11）**，聚焦/关闭只在服务器端生效，远程浏览器看不到画面。要在远程机器上操作它们，用「**接管到浮窗**」：
+
+### 只读查看（任何终端都能用，包括正在跑服务的）
+
+定时抓取该窗口画面（ffmpeg `x11grab`）显示在浏览器浮窗里：**能看到里面的真实内容，但不能发送任何指令**。刷新频率可选 1 / 2 / 5 秒或暂停，也可拖动和最大化。
+
+这是唯一能"看到"一个已在运行的终端里内容的通用办法 —— 已存在终端的输出流无法事后读取（pty 的消费者唯一），终端模拟器也不对外提供滚动缓冲区。
+
+限制：只能看到**当前可见的一屏**，拿不到已滚出屏幕的历史；窗口被遮挡时会先把它提到最前再抓。依赖 `ffmpeg`。
+
+### 接管（可双向操作，有条件）
+
+要让浮窗里的终端**能输入**，用「接管到浮窗」，前提是 `tmux`：
+
+1. 该终端此前被接管过 → 直接复用其 tmux 会话（不会反复嵌套注入）；
+2. 该终端的 shell 本来就在 tmux 里 → 直接 attach，能看到它的完整回滚；
+3. 否则向该窗口注入 `exec tmux new-session -A -s deckpit-w<窗口XID>`，把当前 shell 挂进 tmux，再在浏览器浮窗里 attach。
+
+接管后是一个可拖动 / 可最大化 / 可缩放的浏览器浮窗，**双向实时同步**：服务器上那个终端的输入输出，和你在这里敲的完全一致。关闭浮窗不会终止会话，可在终端中心找回。
+
+已知边界：
+
+- **接管之前的输出不会带过来**（新的 tmux pane 从接管时刻开始）；要包含已有历史，那个终端必须本来就在 tmux 里。
+- 终端前台正在跑程序（vim / top / 交互程序）时注入的命令会被它当输入吞掉，接管会超时失败 —— 请先回到 shell 提示符。
+- GNOME Terminal 属于"单进程多窗口"终端，所有窗口共享一个 `gnome-terminal-server` 进程，因此**无法提前判断目标窗口是否空闲**，只能尝试注入并按超时判定成败；会话按窗口 XID（而非 PID）命名，避免多个窗口串台。
+- 依赖服务器安装 tmux：`sudo apt install tmux`。
+
 ## 安全设计
 
-- 仅绑定 `127.0.0.1`，不暴露外网；无遥测、无外网回调
+- 默认不暴露外网；无遥测、无外网回调
+- 认证按来源区分：本机免登录，非本机必须账号密码（详见[局域网 / 远程访问](#局域网--远程访问)）
+- 未配置 `DASH_AUTH_PASSWORD` 时非本机访问直接拒绝，登录失败超限自动锁定来源
 - 危险操作（kill 进程、删除文件、覆盖写入）一律要求前端二次确认
 - kill 默认 SIGTERM，SIGKILL 需显式选择；展示完整 cmdline 防误杀
 - 文件操作经 `Path.resolve()` 前缀校验，拒绝 `..` 与符号链接逃逸
@@ -333,7 +502,8 @@ DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史�
 - 外部终端窗口控制（wmctrl/xdotool）与悬浮小屏吸附依赖 X11，Wayland 下不可用
 - GPU 监控仅支持 NVIDIA（pynvml / nvidia-smi）
 - 远程主机管理未做——SSH 模块仅"发起连接"，不是远端面板
-- systemd 服务单元中的工作目录需按实际安装路径修改
+- systemd 用户服务需由 `scripts/setup.sh` 安装（它会按实际路径生成 unit）；手动迁移目录后需重跑 setup
+- 远程登录会话保存在服务端内存，服务重启后远程客户端需重新登录
 
 ## 文档
 

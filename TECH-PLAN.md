@@ -97,8 +97,6 @@ linux-dashboard/
 ├── scripts/
 │   ├── dev.sh                   # 同时起前后端（开发）
 │   └── start.sh                 # 生产启动（uvicorn 托管前端 dist）
-├── deploy/
-│   └── deckpit.service         # systemd user unit
 └── README.md
 ```
 
@@ -279,22 +277,9 @@ recent_files(id, path, opened_at)             -- M2-F9
 
 **生产模式**：前端 `vite build` → 后端 FastAPI 静态托管 `dist/`，只跑 8080 一个端口。
 
-**systemd user service**（`deploy/deckpit.service`）：
-
-```ini
-[Unit]
-Description=Deckpit
-After=default.target
-
-[Service]
-WorkingDirectory=%h/linux-dashboard/backend
-ExecStart=%h/linux-dashboard/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8080
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-```
+**systemd user service**：由 `scripts/setup.sh` 第 5 步生成 `~/.config/systemd/user/deckpit.service`
+（`WorkingDirectory`/`ExecStart` 取实际安装路径并做 systemd 空格转义，口令走 `EnvironmentFile=-~/.config/deckpit.env`），
+随后 `daemon-reload` + `enable`。
 
 启用：`systemctl --user enable --now deckpit`；日志：`journalctl --user -u deckpit -f`。
 

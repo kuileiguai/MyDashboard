@@ -9,12 +9,23 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
+from auth import AuthMiddleware, router as auth_router
 from routers import commands, files, ports, terminal, system, logs, env, ssh, dashboard, docker
 from ws import terminal_ws, monitor_ws, log_ws
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from config import HOST
+    from auth import password_configured
+
+    if HOST not in ("127.0.0.1", "localhost", "::1") and not password_configured():
+        print(
+            f"[警告] 已绑定 {HOST} 但未设置 DASH_AUTH_PASSWORD："
+            f"非本机访问将被拒绝。设置后重启即可开放远程登录。",
+            flush=True,
+        )
+
     await init_db()
     from database import get_db
     async with get_db() as db:
@@ -27,8 +38,11 @@ async def lifespan(app: FastAPI):
 
     # 启动后台监控采样任务
     import asyncio
-    from services.monitor_service import _monitor_loop
+    from services.monitor_service import _monitor_loop, _du_refresh_loop
     monitor_task = asyncio.create_task(_monitor_loop())
+
+    # 启动 du 缓存刷新任务（让 snapshot.disks 带 du_used 字段）
+    du_refresh_task = asyncio.create_task(_du_refresh_loop())
 
     # 启动 shell 历史自动同步任务
     from services.history_sync import history_sync_loop
@@ -38,9 +52,14 @@ async def lifespan(app: FastAPI):
 
     # 关闭后台任务
     monitor_task.cancel()
+    du_refresh_task.cancel()
     history_task.cancel()
     try:
         await monitor_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await du_refresh_task
     except asyncio.CancelledError:
         pass
     try:
@@ -60,7 +79,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 远程访问认证 —— 本机来源免登录，其他来源需登录（保护 /api 与 /ws）
+app.add_middleware(AuthMiddleware)
+
 # REST 路由
+app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 app.include_router(commands.router, prefix="/api/commands", tags=["M1-Commands"])
 app.include_router(files.router, prefix="/api/files", tags=["M2-Files"])
 app.include_router(ports.router, prefix="/api", tags=["M3-Ports"])

@@ -17,6 +17,11 @@ npx vite build
 echo "=== 启动后端 (FastAPI :8787，托管前端) ==="
 cd "$PROJECT_DIR/backend"
 
+# 监听地址：默认 0.0.0.0（局域网可访问，非本机来源需登录）；
+# 只想本机访问就 DASH_HOST=127.0.0.1 ./scripts/start.sh
+DASH_HOST="${DASH_HOST:-0.0.0.0}"
+export DASH_HOST
+
 # 端口占用检测：bind 失败前给出明确提示，避免无提示继续
 if command -v ss >/dev/null 2>&1; then
   if ss -tln 2>/dev/null | grep -q ":8787 "; then
@@ -26,8 +31,21 @@ if command -v ss >/dev/null 2>&1; then
   fi
 fi
 
-.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8787 &
+.venv/bin/uvicorn main:app --host "$DASH_HOST" --port "${DASH_PORT:-8787}" &
 BACKEND_PID=$!
+
+PORT="${DASH_PORT:-8787}"
+LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+echo "监听: $DASH_HOST:$PORT"
+echo "本机访问: http://localhost:$PORT"
+[ -n "$LAN_IP" ] && [ "$DASH_HOST" = "0.0.0.0" ] && echo "局域网访问: http://$LAN_IP:$PORT"
+if [ "$DASH_HOST" != "127.0.0.1" ] && [ -z "${DASH_AUTH_PASSWORD:-}" ] && [ -z "${DASH_AUTH_PASSWORD_HASH:-}" ]; then
+  echo "" >&2
+  echo "[警告] 未设置 DASH_AUTH_PASSWORD —— 非本机访问会被拒绝。" >&2
+  echo "        开放远程登录: DASH_AUTH_PASSWORD='你的强密码' ./scripts/start.sh" >&2
+  echo "" >&2
+fi
 
 # 可选：启动悬浮小屏（需图形会话 X11，默认关闭）
 # 启用方式：DASH_PALETTE=1 ./scripts/start.sh

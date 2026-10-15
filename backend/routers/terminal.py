@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import signal
 import asyncio
 import subprocess
@@ -9,11 +10,16 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from database import get_db
 from services.pty_manager import pty_manager
-from services.tmux_service import list_tmux_sessions, tmux_info, attach_tmux_session
+from services.tmux_service import (
+    list_tmux_sessions, tmux_info, attach_tmux_session,
+    tmux_available, session_name_for_window, wait_for_session,
+    find_session_by_pane_pid, pane_pid_sessions,
+)
 from services.external_terminal import (
     list_terminal_windows, focus_window, close_window,
     send_command_to_window, send_keys_to_window, send_command_to_active_window,
     open_terminal_at,
+    get_shell_pid, shell_is_busy, inject_tmux_session,
 )
 from services.port_service import get_listening_ports
 
@@ -83,14 +89,77 @@ async def tmux_attach(name: str, read_only: bool = False):
 
 @router.get("/external/list")
 async def external_list():
-    """列出本机已打开的外部终端窗口（GNOME Terminal、xterm 等）"""
-    return {"terminals": list_terminal_windows()}
+    """列出本机已打开的外部终端窗口（GNOME Terminal、xterm 等）
+
+    附带每个窗口的 shell PID、前台忙碌状态以及是否可被 tmux 接管。
+    """
+    ok_tmux = tmux_available()
+    pane_map = pane_pid_sessions()
+    terminals = list_terminal_windows()
+
+    for t in terminals:
+        shell_pid = get_shell_pid(t.get("pid"))
+        session = pane_map.get(shell_pid)
+        busy, running = shell_is_busy(shell_pid) if shell_pid else (True, "无法定位 shell")
+        t["shell_pid"] = shell_pid
+        t["tmux_session"] = session
+        t["busy"] = busy
+        t["running_command"] = running
+        # 已在 tmux 内可直接 attach；否则需 shell 空闲才能注入
+        t["can_takeover"] = ok_tmux and (bool(session) or not busy)
+
+    return {"terminals": terminals, "tmux_available": ok_tmux, "capture_available": shutil.which("ffmpeg") is not None}
 
 
 @router.post("/external/{win_id}/focus")
 async def external_focus(win_id: str):
     ok = focus_window(win_id)
     return {"ok": ok}
+
+
+@router.post("/external/{win_id}/takeover")
+async def external_takeover(win_id: str):
+    """把某个外部终端窗口接管到面板内终端（PTY），实现远程双向操作。
+
+    - 该终端的 shell 已在 tmux 内 → 直接 attach 同一会话；
+    - 否则向窗口注入 `exec tmux new-session -A -s deckpit-w<pid>`，
+      把当前 shell 挂进 tmux，再 attach。前台有程序时无法注入，返回 409。
+    """
+    if not tmux_available():
+        raise HTTPException(400, "未安装 tmux，无法接管。请先在服务器执行: sudo apt install tmux")
+
+    win = next((w for w in list_terminal_windows() if w["id"] == win_id), None)
+    if not win:
+        raise HTTPException(404, "未找到该终端窗口，请刷新列表后重试")
+
+    shell_pid = get_shell_pid(win.get("pid"))
+    cwd = win.get("cwd") or "~"
+
+    # 已在 tmux 内：直接接管，历史回滚也能看到
+    existing = find_session_by_pane_pid(shell_pid)
+    if existing:
+        sid = pty_manager.create(f"tmux:{existing}", cwd, "/bin/bash", attach_tmux_session(existing))
+        return {
+            "session_id": sid, "session_name": existing, "mode": "attach",
+            "message": f"已接管现有 tmux 会话 {existing}，与该终端完全双向同步",
+        }
+
+    busy, running = shell_is_busy(shell_pid) if shell_pid else (True, "无法定位 shell")
+    if busy:
+        raise HTTPException(409, f"该终端前台正在运行 {running}，无法接管。请结束该程序回到 shell 提示符后重试")
+
+    name = session_name_for_window(win.get("pid"))
+    if not inject_tmux_session(win_id, name):
+        raise HTTPException(500, "注入失败：无法激活该终端窗口（服务器桌面可能已锁定或不可聚焦）")
+
+    if not wait_for_session(name, 8.0):
+        raise HTTPException(504, "等待 tmux 会话建立超时，接管失败")
+
+    sid = pty_manager.create(f"tmux:{name}", cwd, "/bin/bash", attach_tmux_session(name))
+    return {
+        "session_id": sid, "session_name": name, "mode": "inject",
+        "message": f"已接管：该终端已挂入 tmux 会话 {name}，从现在起双向同步（接管之前的输出无法带过来）",
+    }
 
 
 @router.post("/external/{win_id}/close")

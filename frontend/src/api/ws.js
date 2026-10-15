@@ -4,6 +4,13 @@
 
 const WS_URL_BASE = `ws://${location.host}`
 
+// 未登录时 WS 握手被中间件以 1008 拒绝，此时暂停自动重连，避免无效刷屏
+let wsBlocked = false
+
+export function setWsBlocked(value) {
+  wsBlocked = !!value
+}
+
 class WsClient {
   constructor() {
     this.connections = new Map() // topic -> { ws, subscribers, reconnectTimer, pingTimer }
@@ -37,6 +44,7 @@ class WsClient {
   }
 
   _connect(topic) {
+    if (wsBlocked) return
     const url = `${WS_URL_BASE}${topic}`
     const ws = new WebSocket(url)
     const subscribers = new Set()
@@ -64,8 +72,13 @@ class WsClient {
       })
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       clearInterval(conn.pingTimer)
+      if (event.code === 1008) {
+        wsBlocked = true
+        window.dispatchEvent(new CustomEvent('dash:unauthorized', { detail: { status: 401, source: 'ws' } }))
+      }
+      if (wsBlocked) return
       // Auto reconnect with exponential backoff
       if (subscribers.size > 0) {
         const delay = Math.min(1000 * 2 ** (this.connections.get(topic)?._retries || 0), 10000)

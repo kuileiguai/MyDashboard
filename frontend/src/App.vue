@@ -1,6 +1,6 @@
 <template>
   <div class="app-container" :class="{ dark: isDark }">
-    <router-view v-if="isPalette" />
+    <router-view v-if="isPalette || isLogin" />
     <template v-else>
     <DependencyBanner ref="depBanner" />
     <el-container>
@@ -31,6 +31,12 @@
         </el-menu>
 
         <div class="sidebar-footer">
+          <el-tooltip v-if="auth.authenticated" content="退出登录" placement="right">
+            <div class="dep-status" @click="onLogout">
+              <el-icon :size="14"><SwitchButton /></el-icon>
+              <span v-if="!isCollapsed" class="dep-label">退出登录</span>
+            </div>
+          </el-tooltip>
           <el-switch v-model="isDark" :active-icon="Moon" :inactive-icon="Sunny" size="small" @change="toggleTheme" />
           <div class="dep-status" @click="showDepDialog = true" :title="depStatusText">
             <el-icon :size="14" :color="depAllOk ? '#67c23a' : '#e6a23c'">
@@ -76,17 +82,20 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Sunny, Moon, CircleCheck, WarningFilled, Download } from '@element-plus/icons-vue'
+import { Sunny, Moon, CircleCheck, WarningFilled, Download, SwitchButton } from '@element-plus/icons-vue'
 import DependencyBanner from './components/DependencyBanner.vue'
 import api from './api'
+import { auth, refreshAuth, logout } from './stores/auth'
 
 const route = useRoute()
+const router = useRouter()
 const isCollapsed = ref(false)
 const isDark = ref(false)
 const isPalette = computed(() => route.name === 'QuickPalette')
+const isLogin = computed(() => route.name === 'Login')
 
 const activeMenu = computed(() => {
   const path = route.path
@@ -145,7 +154,27 @@ async function installDeps() {
   depInstalling.value = false
 }
 
-onMounted(() => { if (!isPalette.value) refreshDeps() })
+// 会话过期 / 未授权（HTTP 401 或 WS 1008）→ 复核状态并按需跳登录页
+async function onUnauthorized() {
+  await refreshAuth()
+  if (auth.authRequired && !auth.authenticated && route.name !== 'Login') {
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+  }
+}
+
+async function onLogout() {
+  await logout()
+  router.push('/login')
+}
+
+onMounted(() => {
+  window.addEventListener('dash:unauthorized', onUnauthorized)
+  if (!isPalette.value && !isLogin.value) refreshDeps()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('dash:unauthorized', onUnauthorized)
+})
 </script>
 
 <style scoped>

@@ -20,6 +20,125 @@ _history: deque = deque(maxlen=MONITOR_HISTORY_POINTS)
 _subscribers: list = []
 _last_sample_time = 0
 
+# 分区 du 缓存（mountpoint → {"du_used": int, "ts": float}）
+# 与 df 不同：du 是目录内文件实际占用总和（apparent size）。
+# 用异步后台任务刷新，避免阻塞主采样循环。
+_DU_USED_CACHE: dict[str, dict] = {}
+_DU_REFRESH_INTERVAL = 60  # 秒
+
+
+def _is_vfs_mount(mountpoint: str) -> bool:
+    """判断挂载点是否在伪文件系统下（du 不递归这些）"""
+    p = mountpoint.rstrip("/")
+    if p in {"/proc", "/sys", "/dev", "/run", "/snap", "/boot/efi"}:
+        return True
+    parts = [x for x in p.split("/") if x]
+    return any(x in {"proc", "sys", "dev", "run", "snap"} for x in parts)
+
+
+async def _du_used_async(mountpoint: str) -> int:
+    """异步 du -sbx mountpoint，返回字节数（apparent size），失败返回 0"""
+    if _is_vfs_mount(mountpoint):
+        return 0
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "du", "-sbx",
+            "--exclude=proc", "--exclude=sys", "--exclude=dev",
+            "--exclude=run", "--exclude=snap",
+            mountpoint,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=90)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            return 0
+        line = stdout.decode().strip().split("\t")
+        if len(line) >= 2:
+            try:
+                return int(line[0])
+            except ValueError:
+                return 0
+    except Exception:
+        return 0
+    return 0
+
+
+async def _du_refresh_loop():
+    """后台任务：每 60s 对每个挂载点跑 du，刷新缓存
+
+    与主采样解耦，避免大分区 du 卡住 WS 推送。
+    """
+    # 启动后立即跑一轮，让首屏列表就有 du_used
+    while True:
+        try:
+            partitions = _real_partitions()
+            for part in partitions:
+                mp = part.mountpoint
+                cached = _DU_USED_CACHE.get(mp)
+                if cached and (time.time() - cached["ts"]) < _DU_REFRESH_INTERVAL:
+                    continue
+                du_used = await _du_used_async(mp)
+                _DU_USED_CACHE[mp] = {"du_used": du_used, "ts": time.time()}
+        except Exception:
+            pass
+        await asyncio.sleep(5)  # 每 5s 扫描一遍，只跑过期的（实际频率由 _DU_REFRESH_INTERVAL 决定）
+
+
+# ── 真实物理分区过滤 ──
+# psutil.disk_partitions() 返回所有挂载点，含 loop devices（snap 包镜像）、
+# bind mounts（snapd 给 snap 注入的子目录挂载）、tmpfs/overlay 等。
+# 这些对磁盘占用分析无意义，过滤掉，只保留真实物理分区。
+
+_PSEUDO_FSTYPES = frozenset({
+    "squashfs",        # snap 镜像格式
+    "overlay", "overlayfs", "aufs",  # 容器/Docker
+    "tmpfs", "devtmpfs", "devpts", "sysfs", "proc",
+    "cgroup", "cgroup2", "autofs", "fusectl",
+    "configfs", "debugfs", "tracefs", "mqueue",
+    "pstore", "bpf", "ramfs", "hugetlbfs",
+    "efivarfs", "binfmt_misc", "fuse.gvfsd-fuse",
+    "securityfs", "nsfs",
+})
+
+_SNAP_MOUNT_PREFIXES = ("/snap/", "/var/snap/", "/run/snap/")
+
+_PSEUDO_DEVICE_PREFIXES = ("/dev/loop", "/dev/ram", "/dev/zram")
+
+
+def _is_real_partition(part) -> bool:
+    """判断是否是真实物理分区（不是 loop / bind / 容器层等）"""
+    device = (part.device or "").strip()
+    mountpoint = (part.mountpoint or "").strip()
+    fstype = (part.fstype or "").strip()
+
+    # 1) 伪块设备：loop / ram / zram
+    if any(device.startswith(p) for p in _PSEUDO_DEVICE_PREFIXES):
+        return False
+
+    # 2) snap 相关挂载点（含 snapd 自动创建的 bind mount，如
+    #    /var/snap/firefox/common/host-hunspell）
+    if any(mountpoint.startswith(p) for p in _SNAP_MOUNT_PREFIXES):
+        return False
+
+    # 3) 伪文件系统类型
+    if fstype in _PSEUDO_FSTYPES:
+        return False
+
+    return True
+
+
+def _real_partitions() -> list:
+    """返回过滤后的真实分区列表"""
+    try:
+        return [p for p in psutil.disk_partitions() if _is_real_partition(p)]
+    except Exception:
+        return []
+
 
 def get_snapshot() -> dict:
     """返回当前一次性全量快照"""
@@ -60,14 +179,19 @@ def _sample_now() -> dict:
 
     # Disk
     disks = []
-    for part in psutil.disk_partitions():
+    for part in _real_partitions():
         try:
             usage = psutil.disk_usage(part.mountpoint)
+            du_data = _DU_USED_CACHE.get(part.mountpoint, {})
+            du_used = du_data.get("du_used")  # 可能为 None（缓存尚未填充）
+            du_ts = du_data.get("ts")
             disks.append({
                 "mountpoint": part.mountpoint,
                 "device": part.device,
                 "total": usage.total,
-                "used": usage.used,
+                "used": usage.used,           # df: 文件系统层 used
+                "du_used": du_used,          # du: 目录内文件实际占用（apparent size）
+                "du_ts": du_ts,              # du 数据的采集时间戳
                 "percent": usage.percent,
             })
         except Exception:

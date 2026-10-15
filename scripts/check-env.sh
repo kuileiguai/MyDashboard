@@ -170,6 +170,60 @@ for cmd in tmux lsblk; do
     [ "$cmd" = "lsblk" ] && tip "Ubuntu: sudo apt install -y util-linux"
   fi
 done
+# tmux：远程接管外部终端的核心依赖
+if command -v tmux >/dev/null 2>&1; then
+  ok "命令 tmux（远程接管外部终端）"
+else
+  warn "命令 tmux 缺失 —— 远程机器将无法接管外部终端窗口"
+  tip "Ubuntu: sudo apt install -y tmux（或 ./scripts/setup.sh 自动安装）"
+fi
+
+# ── 5.1 远程访问与安全配置 ──
+hdr "5.1 远程访问与安全配置（权限等级很高，务必核对）"
+if [ "$(id -u)" = "0" ]; then
+  fail "以 root 运行 —— 服务等同 root shell，建议改用普通用户"
+else
+  ok "运行用户 $(id -un)（非 root，符合预期）"
+fi
+if id -nG "$USER" 2>/dev/null | grep -qw docker; then
+  warn "当前用户在 docker 组 —— 等同 root 权限（可挂载宿主机目录）"
+fi
+
+ENV_FILE="${DASH_ENV_FILE:-$HOME/.config/deckpit.env}"
+if [ -f "$ENV_FILE" ]; then
+  ok "部署配置文件存在: $ENV_FILE"
+  perms=$(stat -c '%a' "$ENV_FILE" 2>/dev/null)
+  if [ "$perms" = "600" ]; then
+    ok "权限 $perms（仅本人可读写）"
+  else
+    warn "权限 $perms 过宽，口令可能被同机其他用户读取"
+    tip "修复: chmod 600 $ENV_FILE"
+  fi
+  if grep -Eq '^DASH_AUTH_PASSWORD=.+' "$ENV_FILE" 2>/dev/null; then
+    ok "已配置 DASH_AUTH_PASSWORD（非本机访问可登录）"
+  else
+    warn "$ENV_FILE 中未设置口令 —— 非本机访问会被拒绝"
+    tip "运行 ./scripts/setup.sh 自动生成强口令"
+  fi
+else
+  warn "未找到 $ENV_FILE（尚未完成部署配置）"
+  tip "运行 ./scripts/setup.sh 一次配好：口令 / 监听范围 / 防火墙 / 开机自启"
+fi
+
+if command -v ufw >/dev/null 2>&1; then
+  if sudo -n true 2>/dev/null && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+    ok "ufw 已启用"
+    if sudo ufw status 2>/dev/null | grep -q '8787'; then
+      ok "ufw 已放行 8787"
+    else
+      warn "ufw 未放行 8787（远程访问会被挡）"
+    fi
+  else
+    warn "ufw 未启用或 sudo 需密码：请自行确认 8787 未对公网开放"
+  fi
+else
+  warn "未安装 ufw：请通过其他方式确认 8787 仅对内网开放"
+fi
 
 # ── 4. 端口 ──
 hdr "4. 端口 8787"

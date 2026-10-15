@@ -163,6 +163,79 @@ def _get_window_pid(win_id: str) -> int | None:
     return None
 
 
+# 常见交互 shell（用于从终端窗口进程定位真正的 shell，以及判断前台是否空闲）
+SHELL_NAMES = {
+    "bash", "zsh", "fish", "sh", "dash", "ksh", "mksh", "tcsh", "csh",
+    "nu", "pwsh", "elvish", "xonsh",
+}
+
+
+def _child_procs(pid: int) -> list[dict]:
+    """读取进程的直接子进程（/proc/<pid>/task/*/children）"""
+    children: list[dict] = []
+    try:
+        for tid in os.listdir(f"/proc/{pid}/task"):
+            children_path = f"/proc/{pid}/task/{tid}/children"
+            if not os.path.exists(children_path):
+                continue
+            with open(children_path) as f:
+                for cpid in f.read().split():
+                    try:
+                        with open(f"/proc/{cpid}/comm") as cf:
+                            name = cf.read().strip()
+                        with open(f"/proc/{cpid}/cmdline", "rb") as cf:
+                            cmdline = cf.read().decode("utf-8", "replace").replace("\x00", " ").strip()
+                        children.append({"pid": int(cpid), "name": name, "cmdline": cmdline[:200]})
+                    except Exception:
+                        continue
+            break  # 只取第一个 task
+    except Exception:
+        pass
+    return children
+
+
+def get_shell_pid(window_pid: int) -> int | None:
+    """从终端窗口进程定位它里面实际运行的 shell PID"""
+    for c in _child_procs(window_pid):
+        if c["name"] in SHELL_NAMES:
+            return c["pid"]
+    try:
+        with open(f"/proc/{window_pid}/comm") as f:
+            if f.read().strip() in SHELL_NAMES:
+                return window_pid
+    except Exception:
+        pass
+    children = _child_procs(window_pid)
+    return children[0]["pid"] if children else window_pid
+
+
+def shell_is_busy(shell_pid: int) -> tuple[bool, str]:
+    """shell 前台是否有程序在跑。
+
+    返回 (是否忙碌, 正在跑的命令)。前台有程序时注入的接管命令会被它当输入吞掉，
+    所以调用方需要先据此拒绝接管。
+    """
+    for c in _child_procs(shell_pid):
+        if c["name"] in SHELL_NAMES:
+            continue
+        return True, f"{c['name']} — {c['cmdline'][:80]}"
+    return False, ""
+
+
+def inject_tmux_session(win_id: str, session_name: str) -> bool:
+    """向终端窗口注入命令，把当前 shell 挂进指定 tmux 会话。
+
+    注入前先发 Ctrl+U 清空可能残留的半截输入，避免与命令拼接成乱码。
+    """
+    try:
+        if not _activate(win_id):
+            return False
+        subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+u"], timeout=3)
+        return send_command_to_window(win_id, f"exec tmux new-session -A -s {session_name}")
+    except Exception:
+        return False
+
+
 def _get_proc_info(pid: int) -> dict:
     """从 /proc 读取进程信息"""
     info = {"cwd": "", "cmdline": "", "shell": "", "children": []}
