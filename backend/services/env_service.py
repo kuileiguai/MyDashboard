@@ -3,7 +3,47 @@
 import subprocess
 import json
 import os
+import re
+import shutil
 from pathlib import Path
+
+
+def _run_capture(cmd, timeout=5) -> tuple[int, str]:
+    """执行命令并返回 (returncode, 合并输出)"""
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
+    except Exception:
+        return -1, ""
+
+
+def _first_line(text: str) -> str:
+    for line in (text or "").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def _dir_size_fast(path: str, timeout: int = 15) -> int:
+    """用 du 统计目录大小（比 Python 遍历快），失败回退 _dir_size"""
+    p = Path(os.path.expanduser(str(path)))
+    if not p.is_dir():
+        return 0
+    try:
+        proc = subprocess.run(["du", "-sbx", str(p)], capture_output=True, text=True, timeout=timeout)
+        if proc.returncode == 0 and proc.stdout:
+            return int(proc.stdout.split()[0])
+    except Exception:
+        pass
+    return _dir_size(str(p))
+
+
+def _cache_entry(label: str, path: str) -> dict | None:
+    p = Path(os.path.expanduser(path))
+    if not p.is_dir():
+        return None
+    size = _dir_size_fast(str(p))
+    return {"name": label, "path": str(p), "size_bytes": size, "size_human": _fmt_size(size)}
 
 
 async def list_envs() -> dict:
@@ -283,6 +323,251 @@ async def get_cuda_info() -> dict:
 
     return result
 
+
+
+# ── Java 环境探测 ──
+
+JAVA_SCAN_ROOTS = (
+    "/usr/lib/jvm", "/usr/java", "/opt/java", "/opt/jdk",
+    "~/.jdks", "~/.sdkman/candidates/java",
+    "/Library/Java/JavaVirtualMachines",
+)
+
+
+def _parse_java_version(text: str) -> str:
+    """从 java -version 输出里取版本号（第一行引号内内容）"""
+    line = _first_line(text)
+    m = re.search(r'"([^"]+)"', line)
+    if m:
+        return m.group(1)
+    return re.sub(r"^(openjdk|java|javac)\s+version\s*", "", line, flags=re.I).strip()
+
+
+def _parse_release(jdk_dir: Path) -> dict:
+    """解析 JDK 目录下的 release 文件（比启动 java 快很多）"""
+    data: dict[str, str] = {}
+    rel = Path(jdk_dir) / "release"
+    if not rel.is_file():
+        return data
+    try:
+        for line in rel.read_text(errors="replace").splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                data[k.strip()] = v.strip().strip('"')
+    except OSError:
+        pass
+    return data
+
+
+def _describe_jdk(base: Path) -> dict:
+    rel = _parse_release(base)
+    version = rel.get("JAVA_VERSION", "")
+    if not version:
+        _, out = _run_capture([str(base / "bin" / "java"), "-version"], timeout=4)
+        version = _parse_java_version(out)
+    return {
+        "name": base.name,
+        "path": str(base),
+        "version": version,
+        "vendor": rel.get("IMPLEMENTOR") or rel.get("IMPLEMENTOR_VENDOR") or "",
+        "arch": rel.get("OS_ARCH", ""),
+    }
+
+
+async def probe_java_envs() -> dict:
+    """探测 Java 环境：当前 JVM / JAVA_HOME / 已安装 JDK / 构建工具 / 本地仓库体积"""
+    result = {
+        "available": False, "version": "", "runtime": "", "javac_version": "",
+        "java_home": "", "jdks": [], "build_tools": [], "caches": [],
+    }
+
+    java_home = os.environ.get("JAVA_HOME", "").strip()
+    result["java_home"] = java_home
+    try:
+        jh_key = str(Path(os.path.expanduser(java_home)).resolve()) if java_home else ""
+    except OSError:
+        jh_key = java_home
+
+    rc, out = _run_capture(["java", "-version"], timeout=5)
+    if rc == 0 and out:
+        result["available"] = True
+        result["runtime"] = _first_line(out)
+        result["version"] = _parse_java_version(out)
+
+    rc2, out2 = _run_capture(["javac", "-version"], timeout=5)
+    if rc2 == 0 and out2:
+        result["javac_version"] = _first_line(out2).replace("javac ", "").strip()
+
+    # 已安装 JDK
+    roots = [Path(os.path.expanduser(r)) for r in JAVA_SCAN_ROOTS]
+    if java_home:
+        roots.insert(0, Path(os.path.expanduser(java_home)))
+    seen: set[str] = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            children = [c for c in sorted(root.iterdir()) if c.is_dir()]
+        except (PermissionError, OSError):
+            children = []
+        for child in [root] + children:
+            base = child
+            home = child / "Contents" / "Home"          # macOS 布局
+            if home.is_dir():
+                base = home
+            if not (base / "bin" / "java").is_file():
+                continue
+            try:
+                key = str(base.resolve())
+            except OSError:
+                key = str(base)
+            if key in seen:
+                continue
+            seen.add(key)
+            info = _describe_jdk(base)
+            info["is_java_home"] = bool(jh_key) and key == jh_key
+            result["jdks"].append(info)
+            if len(result["jdks"]) >= 30:
+                break
+        if len(result["jdks"]) >= 30:
+            break
+
+    # 构建工具
+    for name, args in (("Maven", ["mvn", "-v"]), ("Gradle", ["gradle", "-v"])):
+        rc3, out3 = _run_capture(args, timeout=8)
+        if rc3 != 0 or not out3:
+            continue
+        # 去掉 Maven 版本后面的 commit 串：Apache Maven 3.9.16 (abc...) → Apache Maven 3.9.16
+        version = _first_line(out3).split(" (")[0].strip()
+        home_path = ""
+        for line in out3.splitlines():
+            m = re.match(r"^(?:Maven|Gradle) home:\s*(.+)$", line.strip(), flags=re.I)
+            if m:
+                home_path = m.group(1).strip()
+                break
+        result["build_tools"].append({
+            "name": name,
+            "version": version,
+            "path": home_path or shutil.which(args[0]) or "",
+        })
+
+    # 本地仓库 / 缓存体积
+    for label, path in (
+        ("Maven 本地仓库", "~/.m2/repository"),
+        ("Gradle 缓存", "~/.gradle/caches"),
+        ("Gradle Wrapper", "~/.gradle/wrapper/dists"),
+    ):
+        entry = _cache_entry(label, path)
+        if entry:
+            result["caches"].append(entry)
+
+    return result
+
+
+# ── Go 环境探测 ──
+
+GO_SCAN_ROOTS = ("/usr/local", "/usr/lib", "/opt", "~/.goenv/versions", "~/.sdkman/candidates/go")
+GO_DIR_RE = re.compile(r"^go([-.\d]|$)", re.I)
+
+
+def _describe_go(go_root: Path) -> dict:
+    version = ""
+    ver_file = go_root / "VERSION"
+    if ver_file.is_file():
+        try:
+            version = ver_file.read_text(errors="replace").strip().splitlines()[0].strip()
+        except OSError:
+            version = ""
+    if not version:
+        go_bin = go_root / "bin" / "go"
+        if go_bin.is_file():
+            rc, out = _run_capture([str(go_bin), "version"], timeout=4)
+            if rc == 0 and out:
+                version = _first_line(out).replace("go version", "").strip().split(" ")[0]
+    return {"name": go_root.name, "path": str(go_root), "version": version}
+
+
+async def probe_go_envs() -> dict:
+    """探测 Go 环境：版本 / go env 关键变量 / 多版本工具链 / GOPATH 工具 / 模块与构建缓存"""
+    result = {
+        "available": False, "version": "", "goroot": "", "gopath": "", "goproxy": "",
+        "gomodcache": "", "gobin": "", "gocache": "", "goversion": "", "goos": "", "goarch": "",
+        "versions": [], "tools": [], "caches": [],
+    }
+
+    rc, out = _run_capture(["go", "version"], timeout=5)
+    if rc == 0 and out:
+        result["available"] = True
+        result["version"] = _first_line(out).replace("go version", "").strip().split(" ")[0]
+
+    rc2, out2 = _run_capture(["go", "env", "-json"], timeout=10)
+    if rc2 == 0 and out2:
+        try:
+            genv = json.loads(out2)
+        except Exception:
+            genv = {}
+        for key in ("GOROOT", "GOPATH", "GOPROXY", "GOMODCACHE", "GOBIN", "GOCACHE", "GOVERSION", "GOOS", "GOARCH"):
+            result[key.lower()] = genv.get(key, "") or ""
+
+    result["goversion"] = result["goversion"] or result["version"]
+
+    # 多版本工具链
+    roots = [Path(os.path.expanduser(r)) for r in GO_SCAN_ROOTS]
+    if result["goroot"]:
+        roots.insert(0, Path(os.path.expanduser(result["goroot"])))
+    seen: set[str] = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            children = [c for c in sorted(root.iterdir()) if c.is_dir()]
+        except (PermissionError, OSError):
+            children = []
+        # goenv / sdkman 的目录下全是版本目录；系统目录里只挑 go* 前缀
+        all_versions_root = root.name in ("versions", "go")
+        for child in [root] + children:
+            if not (child / "bin" / "go").is_file():
+                continue
+            if not all_versions_root and child is not root and not GO_DIR_RE.match(child.name):
+                continue
+            try:
+                key = str(child.resolve())
+            except OSError:
+                key = str(child)
+            if key in seen:
+                continue
+            seen.add(key)
+            info = _describe_go(child)
+            info["is_goroot"] = key == str(Path(result["goroot"]).resolve()) if result["goroot"] else False
+            result["versions"].append(info)
+            if len(result["versions"]) >= 30:
+                break
+        if len(result["versions"]) >= 30:
+            break
+
+    # GOPATH/bin 下的工具（gopls / dlv / air 等）
+    gopath = result["gopath"] or str(Path.home() / "go")
+    bin_dir = Path(os.path.expanduser(gopath)) / "bin"
+    if bin_dir.is_dir():
+        try:
+            for f in sorted(bin_dir.iterdir()):
+                if f.is_file() and os.access(f, os.X_OK):
+                    result["tools"].append({"name": f.name, "path": str(f)})
+                if len(result["tools"]) >= 40:
+                    break
+        except (PermissionError, OSError):
+            pass
+
+    # 模块缓存 / 构建缓存
+    for label, path in (
+        ("模块缓存 (GOMODCACHE)", result["gomodcache"] or "~/go/pkg/mod"),
+        ("构建缓存 (GOCACHE)", result["gocache"] or "~/.cache/go-build"),
+    ):
+        entry = _cache_entry(label, path)
+        if entry:
+            result["caches"].append(entry)
+
+    return result
 
 
 # ── 自定义环境路径扫描 ──

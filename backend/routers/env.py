@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from services.env_service import (
     list_envs, get_env_packages, export_requirements, compare_envs,
-    get_cuda_info, probe_uv_envs, scan_custom_paths,
+    get_cuda_info, probe_uv_envs, probe_java_envs, probe_go_envs, scan_custom_paths,
 )
 from database import get_db
 
@@ -18,6 +18,8 @@ async def env_list():
     result = await list_envs()
     result["uv"] = await probe_uv_envs()
     result["cuda"] = await get_cuda_info()
+    result["java"] = await probe_java_envs()
+    result["go"] = await probe_go_envs()
     return result
 
 
@@ -187,3 +189,15 @@ async def write_dotenv(body: EnvFileEdit):
 @router.get("/cuda")
 async def cuda_info():
     return await get_cuda_info()
+
+
+@router.get("/java")
+async def java_info():
+    """Java 环境探测（JDK 列表 / JAVA_HOME / 构建工具 / 本地仓库）"""
+    return await probe_java_envs()
+
+
+@router.get("/go")
+async def go_info():
+    """Go 环境探测（版本 / go env / 多版本 / GOPATH 工具 / 缓存）"""
+    return await probe_go_envs()

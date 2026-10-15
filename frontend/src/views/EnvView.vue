@@ -2,7 +2,7 @@
   <div class="env-view">
     <h2 class="page-title">环境管理</h2>
 
-    <el-tabs v-model="activeTab" type="border-card">
+    <el-tabs v-model="activeTab" type="border-card" @tab-change="onEnvTab">
       <!-- uv 环境 -->
       <el-tab-pane label="uv 环境" name="uv">
         <div class="toolbar">
@@ -124,6 +124,126 @@
         <div v-else><el-tag v-for="n in envs.node" :key="n.name" style="margin:4px">{{ n.name }}: {{ n.version }}</el-tag></div>
       </el-tab-pane>
 
+      <!-- Java -->
+      <el-tab-pane label="Java" name="java">
+        <div class="toolbar">
+          <el-button size="small" @click="refreshJava" :loading="javaLoading">
+            <el-icon><Refresh /></el-icon> 刷新
+          </el-button>
+        </div>
+        <el-empty v-if="!javaInfo.available" description="未检测到 Java（java 不在 PATH 中）" />
+        <template v-else>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="当前 JDK">{{ javaInfo.version || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="javac">{{ javaInfo.javac_version || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="JAVA_HOME">
+              <code style="font-size:11px">{{ javaInfo.java_home || '未设置' }}</code>
+            </el-descriptions-item>
+            <el-descriptions-item label="运行时" :span="1">{{ javaInfo.runtime || '-' }}</el-descriptions-item>
+          </el-descriptions>
+
+          <h4 class="section-title">已安装 JDK ({{ javaInfo.jdks.length }})</h4>
+          <el-empty v-if="!javaInfo.jdks.length" description="未扫描到 JDK 安装目录" />
+          <el-table v-else :data="javaInfo.jdks" size="small" stripe>
+            <el-table-column label="名称" min-width="170">
+              <template #default="{ row }">
+                {{ row.name }}
+                <el-tag v-if="row.is_java_home" size="small" type="success" effect="plain" style="margin-left:4px">JAVA_HOME</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="version" label="版本" width="100" />
+            <el-table-column prop="vendor" label="厂商" width="130" show-overflow-tooltip />
+            <el-table-column prop="arch" label="架构" width="90" />
+            <el-table-column label="路径" min-width="200" show-overflow-tooltip>
+              <template #default="{ row }"><code style="font-size:11px">{{ row.path }}</code></template>
+            </el-table-column>
+            <el-table-column label="操作" width="90">
+              <template #default="{ row }"><el-button size="small" text @click="copyPath(row.path)">复制路径</el-button></template>
+            </el-table-column>
+          </el-table>
+
+          <h4 class="section-title">构建工具</h4>
+          <el-empty v-if="!javaInfo.build_tools.length" description="未检测到 Maven / Gradle" />
+          <el-table v-else :data="javaInfo.build_tools" size="small" stripe>
+            <el-table-column prop="name" label="工具" width="90" />
+            <el-table-column prop="version" label="版本" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="path" label="安装位置" min-width="200" show-overflow-tooltip />
+            <el-table-column label="操作" width="90">
+              <template #default="{ row }"><el-button size="small" text @click="copyPath(row.path)">复制路径</el-button></template>
+            </el-table-column>
+          </el-table>
+
+          <h4 class="section-title">本地仓库占用</h4>
+          <el-empty v-if="!javaInfo.caches.length" description="无本地仓库/缓存" />
+          <el-table v-else :data="javaInfo.caches" size="small" stripe>
+            <el-table-column prop="name" label="名称" width="150" />
+            <el-table-column label="路径" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }"><code style="font-size:11px">{{ row.path }}</code></template>
+            </el-table-column>
+            <el-table-column prop="size_bytes" label="大小" width="110" sortable>
+              <template #default="{ row }">{{ row.size_human }}</template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </el-tab-pane>
+
+      <!-- Go -->
+      <el-tab-pane label="Go" name="go">
+        <div class="toolbar">
+          <el-button size="small" @click="refreshGo" :loading="goLoading">
+            <el-icon><Refresh /></el-icon> 刷新
+          </el-button>
+        </div>
+        <el-empty v-if="!goInfo.available" description="未检测到 Go（go 不在 PATH 中）" />
+        <template v-else>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="当前版本">{{ goInfo.version || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="平台">{{ [goInfo.goos, goInfo.goarch].filter(Boolean).join(' / ') || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="GOROOT"><code style="font-size:11px">{{ goInfo.goroot || '-' }}</code></el-descriptions-item>
+            <el-descriptions-item label="GOPATH"><code style="font-size:11px">{{ goInfo.gopath || '-' }}</code></el-descriptions-item>
+            <el-descriptions-item label="GOMODCACHE"><code style="font-size:11px">{{ goInfo.gomodcache || '-' }}</code></el-descriptions-item>
+            <el-descriptions-item label="GOCACHE"><code style="font-size:11px">{{ goInfo.gocache || '-' }}</code></el-descriptions-item>
+            <el-descriptions-item label="GOPROXY">{{ goInfo.goproxy || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="GOBIN">{{ goInfo.gobin || '未设置（默认 $GOPATH/bin）' }}</el-descriptions-item>
+          </el-descriptions>
+
+          <h4 class="section-title">工具链 ({{ goInfo.versions.length }})</h4>
+          <el-table :data="goInfo.versions" size="small" stripe>
+            <el-table-column label="名称" min-width="150">
+              <template #default="{ row }">
+                {{ row.name }}
+                <el-tag v-if="row.is_goroot" size="small" type="success" effect="plain" style="margin-left:4px">GOROOT</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="version" label="版本" width="120" />
+            <el-table-column label="路径" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }"><code style="font-size:11px">{{ row.path }}</code></template>
+            </el-table-column>
+            <el-table-column label="操作" width="90">
+              <template #default="{ row }"><el-button size="small" text @click="copyPath(row.path)">复制路径</el-button></template>
+            </el-table-column>
+          </el-table>
+
+          <h4 class="section-title">GOPATH/bin 工具 ({{ goInfo.tools.length }})</h4>
+          <el-empty v-if="!goInfo.tools.length" description="GOPATH/bin 下暂无工具" />
+          <div v-else>
+            <el-tag v-for="t in goInfo.tools" :key="t.path" style="margin:4px" effect="plain">{{ t.name }}</el-tag>
+          </div>
+
+          <h4 class="section-title">缓存占用</h4>
+          <el-empty v-if="!goInfo.caches.length" description="无缓存目录" />
+          <el-table v-else :data="goInfo.caches" size="small" stripe>
+            <el-table-column prop="name" label="名称" width="180" />
+            <el-table-column label="路径" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }"><code style="font-size:11px">{{ row.path }}</code></template>
+            </el-table-column>
+            <el-table-column prop="size_bytes" label="大小" width="110" sortable>
+              <template #default="{ row }">{{ row.size_human }}</template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </el-tab-pane>
+
       <el-tab-pane label="CUDA" name="cuda">
         <el-empty v-if="!envs.cuda" description="加载中..." />
         <div v-else>
@@ -179,7 +299,8 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
-const envs = ref({ python: [], conda: [], node: [], uv: {}, cuda: null })
+const envs = ref({ python: [], conda: [], node: [], uv: {}, cuda: null, java: {}, go: {} })
+const javaLoading = ref(false); const goLoading = ref(false)
 const activeTab = ref('uv')
 const scanPaths = ref([]); const allScannedEnvs = ref([]); const scanLoading = ref(false)
 const showPathConfig = ref(false); const pathConfigText = ref('')
@@ -205,6 +326,9 @@ const filteredManaged = computed(() => {
     (e.project_name || '').toLowerCase().includes(q) || (e.remark || '').toLowerCase().includes(q)
   )
 })
+const javaInfo = computed(() => envs.value.java || { available: false, jdks: [], build_tools: [], caches: [] })
+const goInfo = computed(() => envs.value.go || { available: false, versions: [], tools: [], caches: [] })
+
 const filteredPkgs = computed(() => {
   if (!pkgSearch.value) return packages.value
   const q = pkgSearch.value.toLowerCase()
@@ -275,6 +399,30 @@ async function showPackages(env) {
   pkgsLoading.value = false
 }
 async function exportReq(env) { try { const { data } = await api.get(`/env/${encodeURIComponent(env.path || env.name)}/requirements`); reqContent.value = typeof data === 'string' ? data : JSON.stringify(data, null, 2); reqVisible.value = true } catch (_) { ElMessage.error('导出失败') } }
+// ── Java / Go ──
+async function refreshJava() {
+  javaLoading.value = true
+  try { const { data } = await api.get('/env/java'); envs.value.java = data }
+  catch (_) { ElMessage.error('Java 环境探测失败') }
+  javaLoading.value = false
+}
+async function refreshGo() {
+  goLoading.value = true
+  try { const { data } = await api.get('/env/go'); envs.value.go = data }
+  catch (_) { ElMessage.error('Go 环境探测失败') }
+  goLoading.value = false
+}
+function onEnvTab(name) {
+  if (name === 'java') refreshJava()
+  else if (name === 'go') refreshGo()
+}
+function copyPath(p) {
+  if (!p) return
+  navigator.clipboard.writeText(p)
+    .then(() => ElMessage.success('已复制路径'))
+    .catch(() => ElMessage.error('复制失败'))
+}
+
 async function loadDotenv() { try { const ep = showRaw.value ? '/env/dotenv/raw' : '/env/dotenv'; const { data } = await api.get(ep, { params: { path: dotenvPath.value } }); if (data.exists) dotenvContent.value = data.content || data.lines?.map(l => l.raw).join('\n') || ''; else dotenvContent.value = '' } catch (_) { ElMessage.error('加载失败') } }
 async function saveDotenv() { try { await api.post('/env/dotenv', { path: dotenvPath.value, content: dotenvContent.value }); ElMessage.success('已保存') } catch (_) { ElMessage.error('保存失败') } }
 
@@ -285,4 +433,5 @@ onMounted(() => { fetchEnvs(); fetchPaths(); fetchManaged(); scanEnvs() })
 .env-view { padding: 20px; }
 .page-title { margin-bottom: 16px; font-size: 20px; font-weight: 600; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+.section-title { margin: 16px 0 8px; font-size: 14px; font-weight: 600; }
 </style>

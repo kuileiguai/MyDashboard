@@ -1,9 +1,12 @@
 """M6 日志查看器 路由"""
 
-import os, asyncio
+import os, asyncio, json
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from services.log_service import read_log, search_log
+from pydantic import BaseModel
+from services.log_service import (
+    read_log, search_log, scan_log_files, build_log_tree, looks_like_log, human_size,
+)
 from database import get_db
 
 router = APIRouter()
@@ -12,6 +15,176 @@ router = APIRouter()
 @router.get("")
 async def get_log(path: str, offset: int = 0, limit: int = 100):
     return await read_log(path, offset, limit)
+
+
+@router.get("/browse")
+async def browse_dir(path: str = "~", logs_only: bool = True):
+    """
+    浏览目录，供导入时以文件夹树选择文件/文件夹
+    logs_only=true 时只列出像日志的文件（目录始终列出）
+    """
+    p = Path(os.path.expanduser(str(path or "~")))
+    try:
+        resolved = p.resolve()
+        if not resolved.is_dir():
+            return {"current": str(p), "parent": "", "items": [], "error": "不是目录"}
+        entries = sorted(resolved.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
+    except PermissionError:
+        return {"current": str(p), "parent": "", "items": [], "error": "无权限访问该目录"}
+    except OSError as e:
+        return {"current": str(p), "parent": "", "items": [], "error": str(e)}
+
+    items = []
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        try:
+            is_dir = entry.is_dir()
+        except OSError:
+            continue
+        if is_dir:
+            items.append({"name": entry.name, "path": str(entry), "is_dir": True})
+            continue
+        if logs_only and not looks_like_log(entry):
+            continue
+        try:
+            size = entry.stat().st_size
+        except OSError:
+            size = 0
+        items.append({"name": entry.name, "path": str(entry), "is_dir": False,
+                      "size": size, "size_human": human_size(size)})
+    return {"current": str(resolved), "parent": str(resolved.parent), "items": items}
+
+
+# ── 日志库：导入的日志文件（树形）+ 备注 ──
+
+_LIB_KEY = "log_files"
+_REMARK_KEY = "log_remarks"
+
+
+async def _load_library() -> list[dict]:
+    async with get_db() as db:
+        rows = await db.execute_fetchall("SELECT value FROM settings WHERE key = ?", (_LIB_KEY,))
+    if not rows:
+        return []
+    try:
+        data = json.loads(rows[0]["value"])
+    except Exception:
+        return []
+    return [x for x in data if isinstance(x, dict) and x.get("path")] if isinstance(data, list) else []
+
+
+async def _save_library(entries: list[dict]) -> None:
+    async with get_db() as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                         (_LIB_KEY, json.dumps(entries, ensure_ascii=False)))
+        await db.commit()
+
+
+async def _load_remarks() -> dict:
+    async with get_db() as db:
+        rows = await db.execute_fetchall("SELECT value FROM settings WHERE key = ?", (_REMARK_KEY,))
+    if not rows:
+        return {}
+    try:
+        data = json.loads(rows[0]["value"])
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+async def _save_remarks(remarks: dict) -> None:
+    async with get_db() as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                         (_REMARK_KEY, json.dumps(remarks, ensure_ascii=False)))
+        await db.commit()
+
+
+@router.get("/library")
+async def get_library():
+    """已导入的日志文件（树形 + 扁平列表），并复核文件是否还在"""
+    entries = await _load_library()
+    remarks = await _load_remarks()
+    paths = [e["path"] for e in entries]
+    tree, files = build_log_tree(paths, remarks)
+    return {"tree": tree, "files": files, "remarks": remarks, "count": len(files)}
+
+
+class LibraryImport(BaseModel):
+    paths: list[str]
+
+
+@router.post("/library")
+async def import_library(body: LibraryImport):
+    """导入日志文件；目录会递归扫描其中的日志文件"""
+    from datetime import datetime
+    entries = await _load_library()
+    known = {e["path"] for e in entries}
+    added, errors = [], []
+    for raw in body.paths:
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        p = Path(os.path.expanduser(raw))
+        if p.is_dir():
+            candidates = scan_log_files(str(p))
+            if not candidates:
+                errors.append(f"{raw}：目录中没有发现日志文件")
+            for c in candidates:
+                if c not in known:
+                    known.add(c)
+                    added.append(c)
+        elif p.is_file():
+            target = str(p.resolve()) if str(p).startswith("/") else str(p)
+            if target in known:
+                continue
+            known.add(target)
+            added.append(target)
+        else:
+            errors.append(f"{raw}：路径不存在")
+
+    now = datetime.now().isoformat(timespec="seconds")
+    entries.extend({"path": p, "added_at": now} for p in added)
+    await _save_library(entries)
+    return {"ok": True, "added": len(added), "total": len(entries), "paths": added, "errors": errors}
+
+
+class LibraryRemove(BaseModel):
+    path: str
+
+
+@router.delete("/library")
+async def remove_library(body: LibraryRemove):
+    entries = await _load_library()
+    remaining = [e for e in entries if e["path"] != body.path]
+    await _save_library(remaining)
+    remarks = await _load_remarks()
+    if body.path in remarks:
+        remarks.pop(body.path)
+        await _save_remarks(remarks)
+    return {"ok": True, "removed": len(entries) - len(remaining)}
+
+
+class LogRemark(BaseModel):
+    path: str
+    remark: str
+
+
+@router.get("/remarks")
+async def get_remarks():
+    return await _load_remarks()
+
+
+@router.post("/remarks")
+async def save_remark(body: LogRemark):
+    """给日志文件或日志文件夹写备注（留空即清除）"""
+    remarks = await _load_remarks()
+    if body.remark.strip():
+        remarks[body.path] = body.remark.strip()
+    else:
+        remarks.pop(body.path, None)
+    await _save_remarks(remarks)
+    return {"ok": True, "remarks": remarks}
 
 
 @router.get("/search")
