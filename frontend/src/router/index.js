@@ -13,6 +13,7 @@ const routes = [
   { path: '/env', name: 'Env', component: () => import('../views/EnvView.vue') },
   { path: '/ssh', name: 'Ssh', component: () => import('../views/SshView.vue') },
   { path: '/docker', name: 'Docker', component: () => import('../views/DockerView.vue') },
+  { path: '/taxonomy', name: 'Taxonomy', component: () => import('../views/TaxonomyView.vue') },
   { path: '/quickpalette', name: 'QuickPalette', component: () => import('../views/QuickPalette.vue') },
 ]
 

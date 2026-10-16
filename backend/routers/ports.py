@@ -8,6 +8,8 @@ from database import get_db
 from services.port_service import (
     get_listening_ports, get_port_detail, get_all_processes,
     kill_process, get_systemd_services, systemd_action, detect_zombies,
+    load_port_config, save_port_config, load_port_remarks, save_port_remark,
+    list_snapshots, take_snapshot, list_alerts, mark_alerts_read, clear_alerts,
 )
 
 router = APIRouter()
@@ -61,28 +63,72 @@ async def list_zombies():
 
 # ── M3-F11: 端口快照对比 ──
 
+class PortConfig(BaseModel):
+    watch_ports: list[int] | None = None
+    auto_snapshot: bool | None = None
+    interval_min: int | None = None
+    alert_new: bool | None = None
+    alert_gone: bool | None = None
+
+
+@router.get("/ports/config")
+async def get_port_config():
+    """关注端口 / 自动快照 / 告警开关"""
+    return await load_port_config()
+
+
+@router.post("/ports/config")
+async def set_port_config(body: PortConfig):
+    return await save_port_config(body.model_dump(exclude_none=True))
+
+
+class PortRemark(BaseModel):
+    port: int
+    protocol: str = ""
+    remark: str = ""
+
+
+@router.get("/ports/remarks")
+async def get_port_remarks():
+    return await load_port_remarks()
+
+
+@router.post("/ports/remarks")
+async def set_port_remark(body: PortRemark):
+    """给端口写备注（key = 端口/协议状态，留空即清除）"""
+    key = f"{body.port}/{body.protocol}".rstrip("/")
+    return {"ok": True, "remarks": await save_port_remark(key, body.remark)}
+
+
+@router.get("/ports/alerts")
+async def get_port_alerts(limit: int = 100, unread_only: bool = False):
+    return await list_alerts(limit, unread_only)
+
+
+class AlertIds(BaseModel):
+    ids: list[int] | None = None
+    all: bool = False
+
+
+@router.post("/ports/alerts/read")
+async def read_port_alerts(body: AlertIds):
+    return await mark_alerts_read(body.ids, body.all)
+
+
+@router.delete("/ports/alerts")
+async def delete_port_alerts(body: AlertIds):
+    return await clear_alerts(body.ids, body.all)
+
+
 @router.get("/ports/snapshot")
-async def take_snapshot():
-    """获取当前端口快照并存入 DB"""
-    ports = await get_listening_ports()
-    snap = {"ts": time.time(), "ports": ports}
-    async with get_db() as db:
-        await db.execute(
-            "INSERT INTO port_snapshots (snapshot_data) VALUES (?)",
-            (json.dumps(snap),),
-        )
-        await db.commit()
-    return snap
+async def take_snapshot_api():
+    """获取当前端口快照并存入 DB，同时与上一条快照对比产生告警"""
+    return await take_snapshot("manual")
 
 
 @router.get("/ports/snapshots")
-async def list_snapshots(limit: int = 10):
-    async with get_db() as db:
-        rows = await db.execute_fetchall(
-            "SELECT * FROM port_snapshots ORDER BY id DESC LIMIT ?", (limit,)
-        )
-    return [{"id": r["id"], "created_at": r["created_at"],
-             "data": json.loads(r["snapshot_data"])} for r in rows]
+async def list_snapshots_api(limit: int = 50):
+    return await list_snapshots(limit)
 
 
 @router.get("/ports/snapshots/compare")

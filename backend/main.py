@@ -48,12 +48,17 @@ async def lifespan(app: FastAPI):
     from services.history_sync import history_sync_loop
     history_task = asyncio.create_task(history_sync_loop())
 
+    # 启动端口定时快照任务（按配置间隔自动快照并生成端口变化告警）
+    from services.port_service import port_auto_snapshot_loop
+    port_snap_task = asyncio.create_task(port_auto_snapshot_loop())
+
     yield
 
     # 关闭后台任务
     monitor_task.cancel()
     du_refresh_task.cancel()
     history_task.cancel()
+    port_snap_task.cancel()
     try:
         await monitor_task
     except asyncio.CancelledError:
@@ -64,6 +69,11 @@ async def lifespan(app: FastAPI):
         pass
     try:
         await history_task
+    except asyncio.CancelledError:
+        pass
+
+    try:
+        await port_snap_task
     except asyncio.CancelledError:
         pass
 

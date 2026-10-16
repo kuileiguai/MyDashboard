@@ -16,7 +16,7 @@
           </div>
         </div>
 
-        <el-menu :default-active="activeMenu" :collapse="isCollapsed" :router="true"
+        <el-menu v-model:active="activeMenu" :collapse="isCollapsed" :router="true"
           background-color="transparent" class="sidebar-menu">
           <el-menu-item index="/"><el-icon><HomeFilled /></el-icon><span>首页</span></el-menu-item>
           <el-menu-item index="/commands"><el-icon><Document /></el-icon><span>命令手册</span></el-menu-item>
@@ -108,6 +108,8 @@ const activeMenu = computed(() => {
   if (path.startsWith('/env')) return '/env'
   if (path.startsWith('/ssh')) return '/ssh'
   if (path.startsWith('/docker')) return '/docker'
+  // 分类字典是命令手册的子页面，高亮保持在「命令手册」
+  if (path.startsWith('/taxonomy')) return '/commands'
   return '/'
 })
 

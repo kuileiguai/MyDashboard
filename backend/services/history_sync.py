@@ -21,6 +21,10 @@ from services.history_time import next_ts
 logger = logging.getLogger("history_sync")
 
 _OFFSET_PREFIX = "history_sync_offset:"
+_RESCAN_KEY = "history_rescan"          # 置 1 表示请求「重新全量扫描」
+_CFG_MAX = "history_max_entries"        # 首次导入的最大条数
+_CFG_GLOBAL = "history_global"          # 是否同步 /home/* 下所有用户
+_CFG_INTERVAL = "history_sync_interval"  # 增量同步间隔 (s)
 
 # zsh 扩展历史格式: ": 1234567890:0;command"
 _ZSH_TS_RE = re.compile(r"^: \d+:\d+;(.*)$")
@@ -28,10 +32,79 @@ _ZSH_TS_RE = re.compile(r"^: \d+:\d+;(.*)$")
 _BASH_TS_RE = re.compile(r"^#\d{9,}$")
 
 
-def _history_files() -> list[Path]:
+async def load_history_config() -> dict:
+    """读取收录配置：优先 settings 表（界面可改、即时生效），回落到 config.py 默认值"""
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT key, value FROM settings WHERE key IN (?,?,?)",
+            (_CFG_MAX, _CFG_GLOBAL, _CFG_INTERVAL),
+        )
+    vals = {r["key"]: r["value"] for r in rows}
+
+    try:
+        max_entries = int(str(vals.get(_CFG_MAX, "")).strip())
+        if max_entries <= 0:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        max_entries = HISTORY_MAX_ENTRIES
+
+    g = vals.get(_CFG_GLOBAL)
+    glob = HISTORY_GLOBAL if g is None else str(g).strip().lower() in ("1", "true", "yes")
+
+    try:
+        interval = float(str(vals.get(_CFG_INTERVAL, "")).strip())
+        if interval < 1:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        interval = HISTORY_SYNC_INTERVAL
+
+    return {"max_entries": max_entries, "global": glob, "interval": interval}
+
+
+async def save_history_config(body: dict) -> dict:
+    """写入收录配置（只更新传入的键）"""
+    allowed = {_CFG_MAX, _CFG_GLOBAL, _CFG_INTERVAL}
+    pairs = []
+    for key, value in (body or {}).items():
+        if key not in allowed or value is None:
+            continue
+        if isinstance(value, bool):
+            pairs.append((key, "1" if value else "0"))
+        else:
+            pairs.append((key, str(value)))
+    if pairs:
+        async with get_db() as db:
+            await db.executemany(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", pairs)
+            await db.commit()
+    return await load_history_config()
+
+
+async def request_rescan() -> None:
+    """请求重新全量扫描：清掉各历史文件的读取偏移，下一轮同步从文件开头重读。
+    去重按命令全文，所以不会重复入库，只会把之前超出上限而没收录的老命令补进来。"""
+    async with get_db() as db:
+        await db.execute("DELETE FROM settings WHERE key LIKE ?", (_OFFSET_PREFIX + "%",))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                         (_RESCAN_KEY, "1"))
+        await db.commit()
+
+
+async def _consume_rescan() -> bool:
+    """后台循环每轮检查一次是否收到重扫请求（消费后清除标记）"""
+    async with get_db() as db:
+        rows = await db.execute_fetchall("SELECT value FROM settings WHERE key = ?", (_RESCAN_KEY,))
+        if rows and str(rows[0]["value"]).strip() == "1":
+            await db.execute("DELETE FROM settings WHERE key = ?", (_RESCAN_KEY,))
+            await db.commit()
+            return True
+    return False
+
+
+def _history_files(include_global: bool = False) -> list[Path]:
     """返回要同步的历史文件列表"""
     homes = {Path.home()}
-    if HISTORY_GLOBAL:
+    if include_global:
         base = Path("/home")
         if base.is_dir():
             try:
@@ -90,6 +163,7 @@ async def _load_offsets() -> dict[str, int]:
 
 async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
     """执行一轮同步，返回更新后的偏移映射"""
+    cfg = await load_history_config()
     new_offsets = dict(offsets)
     added = 0
 
@@ -97,7 +171,7 @@ async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
         existing_rows = await db.execute_fetchall("SELECT command FROM terminal_history")
         existing = {r["command"] for r in existing_rows}
 
-        for f in _history_files():
+        for f in _history_files(cfg["global"]):
             key = str(f)
             try:
                 size = f.stat().st_size
@@ -122,9 +196,10 @@ async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
                     existing.add(c)
                 else:
                     # 命令已存在：不新增重复行，只把时间戳刷新为最新，
-                    # 让它排到"最近使用"的最前面
+                    # 让它排到"最近使用"的最前面；run_count 累加（真实执行次数）
                     await db.execute(
-                        "UPDATE terminal_history SET created_at = ? "
+                        "UPDATE terminal_history SET created_at = ?, "
+                        "run_count = run_count + 1 "
                         "WHERE id = (SELECT id FROM terminal_history WHERE command = ? "
                         "ORDER BY id DESC LIMIT 1)",
                         (next_ts(), c),
@@ -132,7 +207,7 @@ async def _sync_once(offsets: dict[str, int]) -> dict[str, int]:
 
             if first_time:
                 # 首次只导入文件末尾最近的 N 条，避免历史全量涌入
-                cmds = cmds[-HISTORY_MAX_ENTRIES:]
+                cmds = cmds[-cfg["max_entries"]:]
 
             for c in cmds:
                 await db.execute(
@@ -159,7 +234,11 @@ async def history_sync_loop():
     offsets = await _load_offsets()
     while True:
         try:
+            if await _consume_rescan():
+                offsets = {}
+                logger.info("history_sync 收到重扫请求，已清空文件偏移")
             offsets = await _sync_once(offsets)
         except Exception as e:
             logger.warning("history_sync 同步失败: %s", e)
-        await asyncio.sleep(HISTORY_SYNC_INTERVAL)
+        cfg = await load_history_config()
+        await asyncio.sleep(cfg["interval"])

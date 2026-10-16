@@ -11,6 +11,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category TEXT NOT NULL DEFAULT '',
+    service TEXT NOT NULL DEFAULT '',
+    scenario TEXT NOT NULL DEFAULT '',
     command TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     params_json TEXT NOT NULL DEFAULT '[]',
@@ -74,12 +76,26 @@ CREATE TABLE IF NOT EXISTS terminal_history (
     cwd TEXT NOT NULL DEFAULT '',
     exit_code INTEGER NOT NULL DEFAULT 0,
     is_favorite INTEGER NOT NULL DEFAULT 0,
+    run_count INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS port_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     snapshot_data TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS port_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_type TEXT NOT NULL DEFAULT '',
+    severity TEXT NOT NULL DEFAULT 'info',
+    port INTEGER NOT NULL DEFAULT 0,
+    protocol TEXT NOT NULL DEFAULT '',
+    process_name TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    snapshot_id INTEGER NOT NULL DEFAULT 0,
+    is_read INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -132,6 +148,14 @@ CREATE TABLE IF NOT EXISTS service_configs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS taxonomy (
+    type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (type, value)
+);
 """
 
 
@@ -147,6 +171,29 @@ async def init_db():
             await db.execute("ALTER TABLE terminal_history ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass  # 列已存在
+        # 真实执行次数：同命令只留一行，重复执行时累加，供 Top 榜统计
+        try:
+            await db.execute("ALTER TABLE terminal_history ADD COLUMN run_count INTEGER NOT NULL DEFAULT 1")
+        except Exception:
+            pass  # 列已存在
+        # 二级分类：所属服务 / 所属场景
+        try:
+            await db.execute("ALTER TABLE commands ADD COLUMN service TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+        try:
+            await db.execute("ALTER TABLE commands ADD COLUMN scenario TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+        # 字典表首次创建时把 commands 表里已有值回填（IGNORE 不会覆盖已有）
+        for t in ("category", "service", "scenario"):
+            try:
+                await db.execute(
+                    f"INSERT OR IGNORE INTO taxonomy (type, value) "
+                    f"SELECT DISTINCT '{t}', {t} FROM commands "
+                    f"WHERE {t} != '' AND {t} IS NOT NULL")
+            except Exception:
+                pass
         await db.commit()
 
 

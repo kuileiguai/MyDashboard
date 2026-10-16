@@ -156,4 +156,4 @@ TRUST_PROXY = _bool("DASH_TRUST_PROXY", False)
 # ── shell 历史自动同步（全局指令收录）─────────────────────────────
 HISTORY_SYNC_INTERVAL = _float("DASH_HISTORY_SYNC_INTERVAL", 5.0)  # 增量同步间隔 (s)
 HISTORY_GLOBAL = _bool("DASH_HISTORY_GLOBAL", False)  # 是否同步 /home/* 下所有用户的历史
-HISTORY_MAX_ENTRIES = _int("DASH_HISTORY_MAX_ENTRIES", 200)  # 首次导入的最大条数
+HISTORY_MAX_ENTRIES = _int("DASH_HISTORY_MAX_ENTRIES", 5000)  # 首次导入的最大条数（可在界面「收录设置」改）
