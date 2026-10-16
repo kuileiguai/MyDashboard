@@ -1,6 +1,7 @@
 <template>
   <div class="logs-view">
     <h2 class="page-title">日志查看器</h2>
+    <p class="module-purpose">集中打开多份日志，搜索关键字并追踪实时输出。</p>
 
     <div class="logs-body" ref="logsBodyRef">
       <!-- 左侧：日志库（可折叠 / 可拖拽调宽） -->
@@ -623,7 +624,7 @@ onUnmounted(() => { for (const u of Object.values(tailUnsubs)) if (typeof u === 
 .log-line { display: flex; gap: 12px; border-bottom: 1px solid var(--el-border-color-extra-light); }
 .log-line.error { background: rgba(245,108,108,0.08); color: #f56c6c; }
 .log-line.warn { background: rgba(230,162,60,0.06); color: #e6a23c; }
-.log-line.info { color: #e91e63; }
+.log-line.info { color: #d96b1e; }
 .line-num { width: 50px; flex-shrink: 0; color: var(--el-text-color-disabled); text-align: right; user-select: none; }
 .tip { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .remark-path { word-break: break-all; }

@@ -575,21 +575,23 @@ async def lookup(q: str = "", limit: int = 30):
         # 命令手册
         if like:
             rows = await db.execute_fetchall(
-                "SELECT id, command, description, category, is_favorite, use_count FROM commands "
+                "SELECT id, command, description, category, service, scenario, is_favorite, use_count FROM commands "
                 "WHERE command LIKE ? OR description LIKE ? OR category LIKE ? "
+                "OR service LIKE ? OR scenario LIKE ? "
                 "ORDER BY is_favorite DESC, use_count DESC LIMIT ?",
-                (like, like, like, limit),
+                (like, like, like, like, like, limit),
             )
         else:
             rows = await db.execute_fetchall(
-                "SELECT id, command, description, category, is_favorite, use_count FROM commands "
+                "SELECT id, command, description, category, service, scenario, is_favorite, use_count FROM commands "
                 "ORDER BY is_favorite DESC, use_count DESC LIMIT ?",
                 (limit,),
             )
         for r in rows:
             results.append({
                 "id": r["id"], "command": r["command"], "description": r["description"],
-                "category": r["category"], "source": "command",
+                "category": r["category"], "service": r["service"], "scenario": r["scenario"],
+                "source": "command",
                 "is_favorite": bool(r["is_favorite"]), "use_count": r["use_count"],
             })
 
@@ -609,7 +611,7 @@ async def lookup(q: str = "", limit: int = 30):
         for r in rows2:
             results.append({
                 "id": r["id"], "command": r["command"], "description": "",
-                "category": "", "source": r["source"],
+                "category": "", "service": "", "scenario": "", "source": r["source"],
                 "is_favorite": bool(r["is_favorite"]), "use_count": 0,
             })
 

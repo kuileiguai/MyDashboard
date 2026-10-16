@@ -4,6 +4,7 @@
       <el-button link :icon="ArrowLeft" @click="$router.push('/commands')">返回命令手册</el-button>
     </div>
     <h2 class="page-title">分类字典</h2>
+    <p class="module-purpose">维护命令手册使用的分类、服务和场景字段。</p>
     <p class="page-desc">
       维护命令手册里「一级分类 / 所属服务 / 所属场景」三个下拉框的选项。删除会把命令里引用的字段清空；改名会同步到命令里。
     </p>

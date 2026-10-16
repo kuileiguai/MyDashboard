@@ -1,6 +1,7 @@
 <template>
   <div class="system-view">
     <h2 class="page-title">系统资源监控</h2>
+    <p class="module-purpose">实时观察 CPU、内存、磁盘与 GPU 的负载变化。</p>
 
     <el-alert v-if="!snapshot" title="等待数据..." type="info" :closable="false" />
 
@@ -163,7 +164,7 @@
                       </template>
                     </small>
                   </div>
-                  <el-progress :percentage="diskRowPercent(d)" :color="diskRowPercent(d) > 90 ? '#f56c6c' : '#e91e63'" :stroke-width="8" />
+                  <el-progress :percentage="diskRowPercent(d)" :color="diskRowPercent(d) > 90 ? '#f56c6c' : '#d96b1e'" :stroke-width="8" />
                 </div>
               </template>
 
@@ -200,7 +201,7 @@
                   <!-- 进度条：相对于当前路径总和 -->
                   <el-progress v-if="!d.pending && !d.size_timeout"
                                :percentage="diskChildPercent(d)"
-                               :color="diskChildPercent(d) > 90 ? '#f56c6c' : '#e91e63'"
+                               :color="diskChildPercent(d) > 90 ? '#f56c6c' : '#d96b1e'"
                                :stroke-width="6"
                                :show-text="false" />
                   <div v-else class="disk-row-progress-placeholder"></div>
@@ -423,7 +424,7 @@ const diskTreemapOption = computed(() => {
           color: is_vfs ? '#bbb'
                 : x.pending ? '#cfcfcf'
                 : x.size_timeout ? '#f0ad4e'
-                : (x.is_dir ? '#e91e63' : '#aea79f'),
+                : (x.is_dir ? '#d96b1e' : '#aea79f'),
         },
       }
     })
@@ -732,17 +733,19 @@ function onTreemapContextMenu(params) {
 const cpuOption = computed(() => {
   const timestamps = history.value.map(h => new Date(h.ts * 1000).toLocaleTimeString())
   return {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['CPU 总使用率'], top: 0 },
-    grid: { left: 50, right: 20, top: 30, bottom: 30 },
-    xAxis: { type: 'category', data: timestamps.slice(-60), boundaryGap: false },
-    yAxis: { type: 'value', max: 100 },
+    animationDuration: 650, animationDurationUpdate: 420, animationEasingUpdate: 'cubicOut',
+    tooltip: { trigger: 'axis', confine: true, backgroundColor: '#15243a', borderColor: '#e87924', borderWidth: 1, padding: [9, 12], textStyle: { color: '#fffaf2', fontSize: 12 }, axisPointer: { type: 'line', lineStyle: { color: '#e87924', width: 1 } } },
+    legend: { data: ['CPU 总使用率'], top: 0, right: 4, icon: 'roundRect', itemWidth: 10, itemHeight: 5, textStyle: { color: '#758194', fontSize: 11 } },
+    grid: { left: 48, right: 14, top: 36, bottom: 26, containLabel: true },
+    xAxis: { type: 'category', data: timestamps.slice(-60), boundaryGap: false, axisLabel: { color: '#8993a1', fontSize: 10, hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
+    yAxis: { type: 'value', max: 100, min: 0, axisLabel: { color: '#8993a1', fontSize: 10, formatter: '{value}%' }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: 'rgba(120,135,150,.14)', type: 'dashed' } } },
     series: [{
       name: 'CPU 总使用率', type: 'line', smooth: true, symbol: 'none',
       data: history.value.map(h => h.cpu?.total || 0).slice(-60),
-      areaStyle: { opacity: 0.15 },
-      lineStyle: { color: '#e91e63' },
-      itemStyle: { color: '#e91e63' },
+      lineStyle: { color: '#d96b1e', width: 2.5, cap: 'round' },
+      areaStyle: { color: 'rgba(217,107,30,.16)' },
+      itemStyle: { color: '#d96b1e' },
+      emphasis: { focus: 'series', scale: 1.5, itemStyle: { borderColor: '#fff', borderWidth: 2 } },
     }],
   }
 })
@@ -750,23 +753,24 @@ const cpuOption = computed(() => {
 const memOption = computed(() => {
   const timestamps = history.value.map(h => new Date(h.ts * 1000).toLocaleTimeString())
   return {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['内存', 'Swap'], top: 0 },
-    grid: { left: 50, right: 20, top: 30, bottom: 30 },
-    xAxis: { type: 'category', data: timestamps.slice(-60), boundaryGap: false },
-    yAxis: { type: 'value', max: 100 },
+    animationDuration: 650, animationDurationUpdate: 420, animationEasingUpdate: 'cubicOut',
+    tooltip: { trigger: 'axis', confine: true, backgroundColor: '#15243a', borderColor: '#e87924', borderWidth: 1, padding: [9, 12], textStyle: { color: '#fffaf2', fontSize: 12 }, axisPointer: { type: 'line', lineStyle: { color: '#e87924', width: 1 } } },
+    legend: { data: ['内存', 'Swap'], top: 0, right: 4, icon: 'roundRect', itemWidth: 10, itemHeight: 5, textStyle: { color: '#758194', fontSize: 11 } },
+    grid: { left: 48, right: 14, top: 36, bottom: 26, containLabel: true },
+    xAxis: { type: 'category', data: timestamps.slice(-60), boundaryGap: false, axisLabel: { color: '#8993a1', fontSize: 10, hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: 'value', max: 100, min: 0, axisLabel: { color: '#8993a1', fontSize: 10, formatter: '{value}%' }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: 'rgba(120,135,150,.14)', type: 'dashed' } } },
     series: [
       {
         name: '内存', type: 'line', smooth: true, symbol: 'none',
         data: history.value.map(h => h.memory?.percent || 0).slice(-60),
-        areaStyle: { opacity: 0.1 },
-        lineStyle: { color: '#e6a23c' },
+        areaStyle: { color: 'rgba(230,162,60,.1)' },
+        lineStyle: { color: '#e6a23c', width: 2.5, cap: 'round' },
         itemStyle: { color: '#e6a23c' },
       },
       {
         name: 'Swap', type: 'line', smooth: true, symbol: 'none',
         data: history.value.map(h => h.swap?.percent || 0).slice(-60),
-        lineStyle: { color: '#aea79f' },
+        lineStyle: { color: '#aea79f', width: 2, type: 'dashed' },
         itemStyle: { color: '#aea79f' },
       },
     ],
@@ -794,24 +798,25 @@ const netOption = computed(() => {
   }
 
   return {
-    tooltip: { trigger: 'axis', valueFormatter: v => fmtBytes(v) + '/s' },
-    legend: { data: ['下载', '上传'], top: 0 },
-    grid: { left: 55, right: 20, top: 30, bottom: 30 },
-    xAxis: { type: 'category', data: timestamps.slice(-60), boundaryGap: false },
-    yAxis: { type: 'value', axisLabel: { formatter: v => fmtBytes(v) + '/s' } },
+    animationDuration: 650, animationDurationUpdate: 420, animationEasingUpdate: 'cubicOut',
+    tooltip: { trigger: 'axis', confine: true, backgroundColor: '#15243a', borderColor: '#e87924', borderWidth: 1, padding: [9, 12], textStyle: { color: '#fffaf2', fontSize: 12 }, valueFormatter: v => fmtBytes(v) + '/s', axisPointer: { type: 'cross', lineStyle: { color: '#e87924' } } },
+    legend: { data: ['下载', '上传'], top: 0, right: 4, icon: 'roundRect', itemWidth: 10, itemHeight: 5, textStyle: { color: '#758194', fontSize: 11 } },
+    grid: { left: 60, right: 14, top: 36, bottom: 26, containLabel: true },
+    xAxis: { type: 'category', data: timestamps.slice(-60), boundaryGap: false, axisLabel: { color: '#8993a1', fontSize: 10, hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: 'value', axisLabel: { color: '#8993a1', fontSize: 10, formatter: v => fmtBytes(v) + '/s' }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: 'rgba(120,135,150,.14)', type: 'dashed' } } },
     series: [
       {
         name: '下载', type: 'line', smooth: true, symbol: 'none',
         data: downloadRates.slice(-60),
-        areaStyle: { opacity: 0.1 },
-        lineStyle: { color: '#67c23a' },
+        areaStyle: { color: 'rgba(103,194,58,.1)' },
+        lineStyle: { color: '#67c23a', width: 2.5, cap: 'round' },
         itemStyle: { color: '#67c23a' },
       },
       {
         name: '上传', type: 'line', smooth: true, symbol: 'none',
         data: uploadRates.slice(-60),
-        lineStyle: { color: '#e91e63' },
-        itemStyle: { color: '#e91e63' },
+        lineStyle: { color: '#d96b1e', width: 2.5, cap: 'round' },
+        itemStyle: { color: '#d96b1e' },
       },
     ],
   }

@@ -1,9 +1,14 @@
 """M8 SSH 管理 路由"""
 
+import os
+import shlex
+import shutil
 import subprocess
+import tempfile
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from database import get_db
+from services.ssh_secret import decrypt_secret, encrypt_secret
 
 router = APIRouter()
 
@@ -15,6 +20,10 @@ class SSHHost(BaseModel):
     username: str = ""
     key_path: str = ""
     jump_host: str = ""
+    # 明文口令，落库前加密；空串表示「不修改已保存的口令」
+    password: str = ""
+    # 置 True 表示清除已保存的口令
+    clear_password: bool = False
 
 
 @router.get("/hosts")
@@ -24,6 +33,9 @@ async def list_hosts():
     result = []
     for r in rows:
         d = dict(r)
+        # 口令密文不下发到前端，只告诉前端有没有存
+        d.pop("password", None)
+        d["has_password"] = bool(r["password"])
         # 添加状态
         d["status"] = await _check_status(d["host"], d["port"])
         result.append(d)
@@ -34,8 +46,10 @@ async def list_hosts():
 async def create_host(body: SSHHost):
     async with get_db() as db:
         cur = await db.execute(
-            "INSERT INTO ssh_hosts (name, host, port, username, key_path, jump_host) VALUES (?,?,?,?,?,?)",
-            (body.name, body.host, body.port, body.username, body.key_path, body.jump_host),
+            "INSERT INTO ssh_hosts (name, host, port, username, key_path, jump_host, password) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (body.name, body.host, body.port, body.username, body.key_path, body.jump_host,
+             encrypt_secret(body.password)),
         )
         await db.commit()
         return {"id": cur.lastrowid}
@@ -48,6 +62,11 @@ async def update_host(hid: int, body: SSHHost):
             "UPDATE ssh_hosts SET name=?,host=?,port=?,username=?,key_path=?,jump_host=? WHERE id=?",
             (body.name, body.host, body.port, body.username, body.key_path, body.jump_host, hid),
         )
+        if body.clear_password:
+            await db.execute("UPDATE ssh_hosts SET password='' WHERE id=?", (hid,))
+        elif body.password:
+            await db.execute("UPDATE ssh_hosts SET password=? WHERE id=?",
+                             (encrypt_secret(body.password), hid))
         await db.commit()
     return {"ok": True}
 
@@ -62,22 +81,49 @@ async def delete_host(hid: int):
 
 @router.post("/hosts/{hid}/connect")
 async def connect_host(hid: int):
-    """一键连接——在 M4 新开终端执行 ssh"""
+    """一键连接——在 M4 新开终端执行 ssh（密码登录用 sshpass 自动填）"""
     async with get_db() as db:
         row = await db.execute_fetchall("SELECT * FROM ssh_hosts WHERE id=?", (hid,))
         if not row:
             raise HTTPException(404, "Host not found")
     h = row[0]
-    cmd = f"ssh {h['username']}@{h['host']}" if h['username'] else f"ssh {h['host']}"
+    target = f"{h['username']}@{h['host']}" if h['username'] else h['host']
+    args: list[str] = ["ssh", shlex.quote(target)]
     if h['port'] != 22:
-        cmd += f" -p {h['port']}"
+        args += ["-p", str(int(h['port']))]
     if h['key_path']:
-        cmd += f" -i {h['key_path']}"
+        args += ["-i", shlex.quote(h['key_path'])]
     if h['jump_host']:
-        cmd += f" -J {h['jump_host']}"
+        args += ["-J", shlex.quote(h['jump_host'])]
+
+    pw = decrypt_secret(h['password'] or "")
+    if pw:
+        if not shutil.which("sshpass"):
+            raise HTTPException(
+                400,
+                "未安装 sshpass，请先在依赖检查里安装（系统设置 → 依赖管理），或执行：sudo apt install -y sshpass"
+            )
+        # 密码写 0600 临时文件，sshpass -f 从文件读，避免出现在进程参数里
+        fd, pwfile = tempfile.mkstemp(prefix="dash-ssh-", suffix=".pw")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(pw)
+        except Exception:
+            os.close(fd)
+            raise
+        os.chmod(pwfile, 0o600)
+        args = ["sshpass", "-f", shlex.quote(pwfile)] + args + [
+            "-o", "StrictHostKeyChecking=accept-new"
+        ]
+        ssh_cmd = " ".join(args) + f"; rm -f {shlex.quote(pwfile)}"
+        auth = "password"
+    else:
+        ssh_cmd = " ".join(args)
+        auth = "key" if h['key_path'] else "default"
+
     from services.pty_manager import pty_manager
-    sid = pty_manager.create(f"ssh:{h['name']}", "~", "/bin/bash", cmd)
-    return {"terminal_id": sid, "command": cmd}
+    sid = pty_manager.create(f"ssh:{h['name']}", "~", "/bin/bash", ssh_cmd)
+    return {"terminal_id": sid, "command": ssh_cmd, "auth": auth}
 
 
 # ── M8-F4: 连接状态探测 ──

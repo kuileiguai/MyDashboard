@@ -1,5 +1,7 @@
 <template>
   <div class="docker-view">
+    <h2 class="page-title">Docker 管理</h2>
+    <p class="module-purpose">查看容器与镜像状态，管理 Compose 项目并检查资源占用。</p>
     <!-- Docker 状态横幅 -->
     <div v-if="available === false" class="docker-warn">
       <el-alert type="error" :closable="false" show-icon>
@@ -12,7 +14,7 @@
         :title="`Docker 已就绪 · Server v${sysInfo.version} · 容器 ${sysInfo.containers} · 镜像 ${sysInfo.images}`" />
     </div>
 
-    <el-tabs v-model="tab" type="border-card" @tab-change="onTab">
+    <el-tabs v-model="tab" type="border-card" @tab-change="onTab" :class="{ 'module-tabs': true, 'is-switching': tabSwitching }">
       <!-- 概览 -->
       <el-tab-pane label="概览" name="overview">
         <el-descriptions :column="4" border size="small">
@@ -277,6 +279,13 @@ import api from '../api'
 import { highlightYaml } from '../utils/yamlHighlight'
 
 const tab = ref('overview')
+const tabSwitching = ref(false)
+let tabMotionTimer
+watch(tab, () => {
+  tabSwitching.value = true
+  clearTimeout(tabMotionTimer)
+  tabMotionTimer = setTimeout(() => { tabSwitching.value = false }, 320)
+})
 const available = ref(null)
 const availError = ref('')
 const availHint = ref('')

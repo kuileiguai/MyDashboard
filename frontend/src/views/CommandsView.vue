@@ -1,6 +1,7 @@
 <template>
   <div class="commands-view">
     <h2 class="page-title">命令速查手册</h2>
+    <p class="module-purpose">把常用命令、参数和历史收进一处，搜索后即可复制复用。</p>
 
     <div class="toolbar">
       <el-input v-model="keyword" placeholder="中英文搜索命令..." clearable prefix-icon="Search"

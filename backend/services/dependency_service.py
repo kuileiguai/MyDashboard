@@ -19,6 +19,12 @@ REQUIRED_TOOLS = {
         "description": "X11 自动化工具 — 用于向外部终端发送命令",
         "used_by": ["终端中心（外部终端发送命令）"],
     },
+    "sshpass": {
+        "package": "sshpass",
+        "description": "非交互式 SSH 密码输入 — 在 SSH 管理里保存了主机密码后，一键连接需要",
+        "used_by": ["SSH 连接（密码登录）"],
+        "optional": True,   # 不强制：只有给主机存了密码时才用得上
+    },
 }
 
 
@@ -30,24 +36,33 @@ def check_dependencies() -> dict:
         info_copy = dict(info)
         info_copy["installed"] = installed
         result["tools"][name] = info_copy
-        if not installed:
+        if not installed and not info.get("optional"):
             result["all_ok"] = False
     return result
 
 
-def get_missing_packages() -> list[str]:
-    """返回未安装的包名列表"""
+def get_missing_packages(include_optional: bool = False) -> list[str]:
+    """返回未安装的包名列表
+
+    Args:
+        include_optional: 是否一并包含可选工具（如 sshpass）
+    """
     deps = check_dependencies()
-    return [info["package"] for name, info in deps["tools"].items() if not info["installed"]]
+    return [
+        info["package"]
+        for name, info in deps["tools"].items()
+        if not info["installed"] and (include_optional or not info.get("optional"))
+    ]
 
 
-def install_missing(pkexec: bool = True) -> dict:
+def install_missing(pkexec: bool = True, include_optional: bool = False) -> dict:
     """安装缺失的系统依赖
 
     Args:
         pkexec: True 使用 pkexec（GUI 密码框），False 使用 sudo（需要终端）
+        include_optional: 是否一并安装可选工具（如 sshpass）
     """
-    missing = get_missing_packages()
+    missing = get_missing_packages(include_optional=include_optional)
     if not missing:
         return {"ok": True, "message": "所有依赖已安装", "installed": []}
 

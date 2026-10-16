@@ -32,7 +32,7 @@ async function check() {
   try {
     const { data } = await api.get('/system/dependencies')
     const missingList = Object.entries(data.tools || {})
-      .filter(([_, info]) => !info.installed)
+      .filter(([_, info]) => !info.installed && !info.optional)
       .map(([name, info]) => name)
     missing.value = missingList
     visible.value = missingList.length > 0

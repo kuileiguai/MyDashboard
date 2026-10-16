@@ -1,28 +1,49 @@
 <template>
   <div class="home-view">
-    <!-- 系统状态条 -->
-    <div class="sys-bar">
-      <div class="sys-item" @click="$router.push('/system')" title="点击查看系统监控">
-        <span class="sys-label">CPU</span>
-        <el-progress :percentage="snapshot.cpu?.total || 0" :color="cpuColor" :stroke-width="8" />
+    <!-- 果冻环境光：让半透明胶质底与 backdrop-filter 有内容可折射 -->
+    <div class="jelly-ambient" aria-hidden="true"></div>
+    <header class="deck-welcome">
+      <div class="deck-welcome-copy">
+        <span class="deck-kicker">DECKPIT · DEVELOPER WORKSPACE</span>
+        <h1>你的开发甲板，准备就绪。</h1>
+        <p>服务、终端与系统状态，一眼掌握。</p>
       </div>
-      <div class="sys-item" @click="$router.push('/system')" title="点击查看系统监控">
-        <span class="sys-label">内存</span>
-        <el-progress :percentage="snapshot.memory?.percent || 0" color="#e6a23c" :stroke-width="8" />
+      <img class="deck-mascot" :src="deckpitLogo" alt="Deckpit 小船长" />
+      <span class="deck-welcome-orbit" aria-hidden="true"></span>
+    </header>
+
+    <!-- 系统状态：四项合一，整卡可点跳转系统监控 -->
+    <el-card shadow="hover" class="section-card jelly sys-panel" @click="$router.push('/system')">
+      <template #header>
+        <div class="card-header">
+          <span>📊 系统状态 <small class="sys-tip">实时采样 · 2s 刷新</small></span>
+          <el-button size="small" text type="primary" @click.stop="$router.push('/system')">系统监控 →</el-button>
+        </div>
+      </template>
+
+      <div class="gauge-row">
+        <RingGauge :percent="snapshot.cpu?.total || 0" :color="cpuColor" label="CPU" :detail="cpuDetail" />
+        <RingGauge :percent="snapshot.memory?.percent || 0" color="#e6a23c" label="内存" :detail="memDetail" />
+        <RingGauge v-if="gpuAvail" :percent="gpuUtil" color="#67c23a" label="GPU" :detail="gpuDetail" />
+        <RingGauge :percent="rootDisk?.percent || 0" :color="diskColor" :label="diskLabel" :detail="diskDetail" />
+        <RingGauge v-if="swapTotal" :percent="snapshot.swap?.percent || 0" color="#aea79f" label="Swap" :detail="swapDetail" />
       </div>
-      <div class="sys-item" v-if="gpuAvail" @click="$router.push('/system')" title="点击查看系统监控">
-        <span class="sys-label">GPU</span>
-        <el-progress :percentage="gpuUtil" color="#67c23a" :stroke-width="8" />
+
+      <!-- 补充指标条：原来四个横条装不下的信息 -->
+      <div class="sys-metrics">
+        <span class="metric" title="1 / 5 / 15 分钟平均负载"><i>负载</i>{{ loadText }}</span>
+        <span class="metric" title="可用内存"><i>可用内存</i>{{ memAvailableText }}</span>
+        <span class="metric" title="网络上行速率"><i>↑ 上传</i>{{ netUpText }}</span>
+        <span class="metric" title="网络下行速率"><i>↓ 下载</i>{{ netDownText }}</span>
+        <span class="metric" title="已配置服务的运行状态"><i>服务</i>{{ svcRunningText }}</span>
+        <span v-if="gpuTemp" class="metric" title="GPU 温度"><i>GPU 温度</i>{{ gpuTemp }}°C</span>
+        <span class="metric" title="物理分区数"><i>分区</i>{{ diskCountText }}</span>
       </div>
-      <div class="sys-item" @click="$router.push('/system')" title="点击查看系统监控">
-        <span class="sys-label">磁盘 {{ rootDisk?.mountpoint }}</span>
-        <el-progress :percentage="rootDisk?.percent || 0" :color="rootDisk?.percent > 90 ? '#f56c6c' : '#aea79f'" :stroke-width="8" />
-      </div>
-    </div>
+    </el-card>
 
     <!-- 模块快捷入口 -->
     <div class="module-grid">
-      <el-card v-for="m in modules" :key="m.path" shadow="hover" class="module-card" @click="$router.push(m.path)">
+      <el-card v-for="m in modules" :key="m.path" shadow="hover" class="module-card jelly" @click="$router.push(m.path)">
         <el-icon :size="24" :color="m.color"><component :is="m.icon" /></el-icon>
         <div class="module-info">
           <div class="module-name">{{ m.name }}</div>
@@ -31,8 +52,25 @@
       </el-card>
     </div>
 
+    <!-- 常用命令：点击直接发送到终端 -->
+    <el-card shadow="hover" class="section-card jelly" v-if="topCommands.length">
+      <template #header>
+        <div class="card-header">
+          <span>⚡ 常用命令 <small class="fav-tip">点击直接发送到终端执行</small></span>
+          <el-button size="small" text type="primary" @click="$router.push('/commands')">命令手册 →</el-button>
+        </div>
+      </template>
+      <div class="top-cmds">
+        <div v-for="c in topCommands" :key="c.id" class="top-cmd-item" @click="runCommand(c)" :title="c.command">
+          <el-icon><CaretRight /></el-icon>
+          <code>{{ c.command }}</code>
+          <span class="op">{{ c.use_count || 0 }} 次</span>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 常用终端：备注 + 文件夹路径，一键打开外部终端 -->
-    <el-card shadow="hover" class="section-card" v-loading="favLoading">
+    <el-card shadow="hover" class="section-card jelly" v-loading="favLoading">
       <template #header>
         <div class="card-header">
           <span>🖥️ 常用终端 <small class="fav-tip">点击条目在本机打开一个外部终端</small></span>
@@ -43,7 +81,7 @@
       </template>
       <el-empty v-if="!favoriteTerms.length && !favLoading" description="暂无常用终端，点击「添加」配置备注与文件夹路径" :image-size="60" />
       <div v-else class="fav-list">
-        <div v-for="t in favoriteTerms" :key="t.id" class="fav-item" :class="{ opening: favOpeningId === t.id }" @click="openFav(t)">
+        <div v-for="t in favoriteTerms" :key="t.id" class="fav-item jelly" :class="{ opening: favOpeningId === t.id }" @click="openFav(t)">
           <el-icon class="fav-icon"><Monitor /></el-icon>
           <div class="fav-info">
             <div class="fav-name">{{ t.name }}</div>
@@ -120,7 +158,7 @@
 
 
     <!-- 项目终端运行管理 -->
-    <el-card shadow="hover" class="section-card" v-loading="svcLoading">
+    <el-card shadow="hover" class="section-card jelly" v-loading="svcLoading">
       <template #header>
         <div class="card-header">
           <span>🚀 项目终端运行管理 <small class="svc-tip">配置本机需启动的服务、启动步骤与占用端口，并实时监控是否运行</small></span>
@@ -131,7 +169,7 @@
       </template>
       <el-empty v-if="!services.length && !svcLoading" description="暂无服务配置，点击「新增服务」添加需要启动的终端服务" :image-size="60" />
       <div v-else class="svc-list">
-        <div v-for="s in services" :key="s.id" class="svc-item" :class="{ disabled: !s.enabled }">
+        <div v-for="s in services" :key="s.id" class="svc-item jelly" :class="{ disabled: !s.enabled }">
           <div class="svc-head" @click="svcOpenDialog(s)">
             <div class="svc-title">
               <el-icon v-if="statusOf(s.id).running" class="svc-dot on"><SuccessFilled /></el-icon>
@@ -176,7 +214,7 @@
     <el-row :gutter="16">
       <!-- 最近文件 -->
       <el-col :xs="24" :md="12">
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="hover" class="section-card jelly">
           <template #header>
             <div class="card-header">
               <span>最近文件</span>
@@ -192,23 +230,30 @@
         </el-card>
       </el-col>
   
-      <!-- 磁盘分区概况 -->
+      <!-- SSH 连接机器：点击直接连，跳终端中心 -->
       <el-col :xs="24" :md="12">
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="hover" class="section-card jelly">
           <template #header>
             <div class="card-header">
-              <span>💾 磁盘分区</span>
-              <el-button size="small" text type="primary" @click="$router.push('/system')">方块图 →</el-button>
+              <span>🔗 SSH 主机</span>
+              <el-button size="small" text type="primary" @click="$router.push('/ssh')">SSH 管理 →</el-button>
             </div>
           </template>
-          <el-empty v-if="!disks.length" description="暂无数据" />
-          <div v-else class="disk-top">
-            <div v-for="d in disks" :key="d.mountpoint" class="disk-item">
-              <div class="disk-item-head">
-                <span class="disk-name" :title="d.mountpoint">{{ d.mountpoint }}</span>
-                <span class="disk-size">{{ d.percent }}% · {{ fmtBytes(d.used) }}/{{ fmtBytes(d.total) }}</span>
+          <el-empty v-if="!sshHosts.length" description="还没有保存主机">
+            <el-button size="small" type="primary" @click="$router.push('/ssh')">去添加</el-button>
+          </el-empty>
+          <div v-else class="ssh-list">
+            <div v-for="h in sshHosts" :key="h.id" class="ssh-item" @click="connectSsh(h)"
+                 :title="`${h.username ? h.username + '@' : ''}${h.host}:${h.port} · ${sshStatusText(h)} — 点击连接`">
+              <span class="ssh-dot" :class="{ online: h.status === 'online', warn: h.status === 'ping_only' }"></span>
+              <div class="ssh-main">
+                <span class="ssh-name">{{ h.name }}</span>
+                <span class="ssh-addr">{{ h.username ? h.username + '@' : '' }}{{ h.host }}:{{ h.port }}</span>
               </div>
-              <el-progress :percentage="d.percent" :color="d.percent > 90 ? '#f56c6c' : d.percent > 60 ? '#e6a23c' : '#67c23a'" :stroke-width="8" />
+              <el-tag size="small" :type="h.has_password ? 'warning' : 'info'">
+                {{ h.has_password ? '密码' : (h.key_path ? '私钥' : '默认') }}
+              </el-tag>
+              <el-icon class="ssh-go"><Connection /></el-icon>
             </div>
           </div>
         </el-card>
@@ -218,12 +263,16 @@
 </template>
 
 <script setup>
+import deckpitLogo from '../assets/deckpit-logo.png'
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSystemStore } from '../stores/system'
 import api from '../api'
+import RingGauge from '../components/RingGauge.vue'
 
 const systemStore = useSystemStore()
+const router = useRouter()
 const recentFiles = ref([])
 const topCommands = ref([])
 const modules = ref([])
@@ -234,6 +283,77 @@ const cpuColor = computed(() => { const p = snapshot.value?.cpu?.total || 0; if 
 const rootDisk = computed(() => (snapshot.value?.disks || []).find(d => d.mountpoint === '/') || (snapshot.value?.disks || [])[0])
 const gpuAvail = computed(() => !!snapshot.value?.gpu?.available)
 const gpuUtil = computed(() => snapshot.value?.gpu?.devices?.[0]?.gpu_util || 0)
+const gpuTemp = computed(() => snapshot.value?.gpu?.devices?.[0]?.temperature || 0)
+
+// ── 环形仪表文案 ──
+const cpuDetail = computed(() => {
+  const c = snapshot.value?.cpu
+  if (!c) return '—'
+  const load = snapshot.value?.load?.load1
+  return `${c.count || '-'} 核${load != null ? ` · 负载 ${load}` : ''}`
+})
+const memDetail = computed(() => {
+  const m = snapshot.value?.memory
+  return m ? `${fmtBytes(m.used)} / ${fmtBytes(m.total)}` : '—'
+})
+const gpuDetail = computed(() => {
+  const g = snapshot.value?.gpu?.devices?.[0]
+  return g ? `${fmtBytes(g.memory_used)} / ${fmtBytes(g.memory_total)}` : '—'
+})
+const diskLabel = computed(() => `磁盘 ${rootDisk.value?.mountpoint || ''}`.trim())
+const diskDetail = computed(() => {
+  const d = rootDisk.value
+  return d ? `${fmtBytes(d.used)} / ${fmtBytes(d.total)}` : '—'
+})
+const diskColor = computed(() => {
+  const p = rootDisk.value?.percent || 0
+  return p > 90 ? '#f56c6c' : p > 70 ? '#e6a23c' : '#aea79f'
+})
+const swapTotal = computed(() => snapshot.value?.swap?.total || 0)
+const swapDetail = computed(() => {
+  const s = snapshot.value?.swap
+  return s ? `${fmtBytes(s.used)} / ${fmtBytes(s.total)}` : '—'
+})
+
+// ── 补充指标条 ──
+const loadText = computed(() => {
+  const l = snapshot.value?.load
+  return l ? `${l.load1} / ${l.load5} / ${l.load15}` : '—'
+})
+const memAvailableText = computed(() => fmtBytes(snapshot.value?.memory?.available) || '—')
+const diskCountText = computed(() => {
+  const n = disks.value.length
+  return n ? `${n} 个` : '—'
+})
+
+// 网络速率：用最近两次采样做差分
+const netRate = computed(() => {
+  const h = systemStore.history
+  if (!h || h.length < 2) return null
+  const a = h[h.length - 2]
+  const b = h[h.length - 1]
+  const dt = (b?.ts || 0) - (a?.ts || 0)
+  if (dt <= 0) return null
+  const up = ((b?.network?.bytes_sent || 0) - (a?.network?.bytes_sent || 0)) / dt
+  const down = ((b?.network?.bytes_recv || 0) - (a?.network?.bytes_recv || 0)) / dt
+  return { up: Math.max(0, up), down: Math.max(0, down) }
+})
+const netUpText = computed(() => (netRate.value ? fmtSpeed(netRate.value.up) : '—'))
+const netDownText = computed(() => (netRate.value ? fmtSpeed(netRate.value.down) : '—'))
+
+const svcRunningText = computed(() => {
+  const total = services.value.length
+  if (!total) return '—'
+  const running = services.value.filter(s => statusOf(s.id).running).length
+  return `${running} / ${total} 运行中`
+})
+
+function fmtSpeed(bytesPerSec) {
+  if (!bytesPerSec) return '0 KB/s'
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`
+  return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`
+}
 
 async function fetchDashboard() {
   try {
@@ -243,15 +363,39 @@ async function fetchDashboard() {
   } catch (_) {}
 }
 
+// ── SSH 主机：列表 + 一键连接 ──
+const sshHosts = ref([])
+
+async function fetchSshHosts() {
+  try {
+    const { data } = await api.get('/ssh/hosts')
+    sshHosts.value = data || []
+  } catch (_) {}
+}
+
+function sshStatusText(h) {
+  return { online: '在线', ping_only: '主机可达，端口未开', offline: '离线' }[h.status] || '未知'
+}
+
+async function connectSsh(h) {
+  try {
+    await api.post(`/ssh/hosts/${h.id}/connect`)
+    ElMessage.success(`已连接 ${h.name}`)
+    router.push('/terminal')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '连接失败')
+  }
+}
+
 // 各模块实时状态摘要（并行聚合）
 async function fetchModules() {
   const base = [
-    { path: '/commands', name: '命令手册', icon: 'Document', color: '#e91e63', desc: '命令库与历史', status: '' },
+    { path: '/commands', name: '命令手册', icon: 'Document', color: '#d96b1e', desc: '命令库与历史', status: '' },
     { path: '/files', name: '文件管理', icon: 'FolderOpened', color: '#e6a23c', desc: '目录与文件操作', status: '' },
     { path: '/ports', name: '端口监控', icon: 'Connection', color: '#67c23a', desc: '监听端口与进程', status: '' },
     { path: '/terminal', name: '终端中心', icon: 'Monitor', color: '#aea79f', desc: 'PTY 终端与外部终端', status: '' },
     { path: '/system', name: '系统监控', icon: 'Odometer', color: '#f56c6c', desc: 'CPU/内存/磁盘/GPU', status: '' },
-    { path: '/logs', name: '日志查看', icon: 'Tickets', color: '#772953', desc: '实时日志 tail', status: '' },
+    { path: '/logs', name: '日志查看', icon: 'Tickets', color: '#15243a', desc: '实时日志 tail', status: '' },
     { path: '/env', name: '环境管理', icon: 'Setting', color: '#d97706', desc: 'Python/Conda 环境', status: '' },
     { path: '/ssh', name: 'SSH 管理', icon: 'Link', color: '#16a085', desc: '远程主机连接', status: '' },
     { path: '/docker', name: 'Docker 管理', icon: 'Box', color: '#5e2750', desc: '容器/镜像/Compose', status: '' },
@@ -475,6 +619,7 @@ function fmtBytes(n) {
 onMounted(async () => {
   systemStore.startMonitor()
   fetchDashboard()
+  fetchSshHosts()
   fetchFavorites()
   await fetchServices()
   fetchModules()
@@ -487,42 +632,94 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.home-view { padding: 20px; }
-.sys-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px; }
-.sys-item {
-  background: var(--el-bg-color);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+.home-view { padding: 28px clamp(18px, 3vw, 42px) 40px; max-width: 1640px; margin: 0 auto; }
+.deck-welcome {
+  min-height: 178px; margin-bottom: 22px; padding: 28px 34px; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between;
+  color: #fff8eb; background: var(--deck-navy); border-radius: var(--radius-xl);
+  box-shadow: 0 12px 28px rgba(13, 23, 40, .16); isolation: isolate;
+  animation: deck-arrive .55s cubic-bezier(.2,.8,.2,1) both;
 }
-.sys-item:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.sys-label { display: block; margin-bottom: 6px; color: var(--el-text-color-secondary); font-size: 13px; }
-.module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.deck-welcome::before {
+  content: ''; position: absolute; inset: auto -3% -72% 32%; height: 220px; border-radius: 50%;
+  background: var(--deck-wood); opacity: .32; transform: rotate(-5deg); z-index: -1;
+}
+.deck-welcome-copy { z-index: 1; }
+.deck-kicker { display: block; margin-bottom: 12px; color: #f3b65f; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
+.deck-welcome h1 { margin: 0; font-size: clamp(25px, 3vw, 36px); line-height: 1.15; letter-spacing: -.6px; color: #fffaf2; }
+.deck-welcome p { margin: 10px 0 0; color: #c7d0db; font-size: 14px; }
+.deck-mascot { width: 154px; height: 154px; object-fit: contain; z-index: 1; filter: drop-shadow(0 8px 12px rgba(0,0,0,.2)); animation: mascot-float 5s ease-in-out infinite; }
+.deck-welcome-orbit { position: absolute; width: 280px; height: 280px; right: 6%; top: -125px; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; z-index: -1; }
+.sys-panel { cursor: pointer; }
+.gauge-row {
+  display: flex; flex-wrap: wrap; justify-content: space-around;
+  gap: 20px 14px; padding: 6px 0 2px;
+}
+.sys-metrics {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px dashed rgba(21, 36, 58, 0.12);
+}
+.metric {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 5px 11px; border-radius: var(--radius-pill);
+  background: rgba(21, 36, 58, 0.04);
+  font-size: 12px; color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+}
+.metric i { font-style: normal; font-size: 11px; color: var(--el-text-color-secondary); }
+.sys-tip { color: var(--el-text-color-secondary); font-size: 12px; font-weight: normal; margin-left: 6px; }
+html.dark .metric { background: rgba(255, 255, 255, 0.06); }
+html.dark .sys-metrics { border-top-color: rgba(255, 255, 255, 0.1); }
+.module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 20px; }
 .module-card { cursor: pointer; display: flex; align-items: center; gap: 12px; }
-.module-card:hover { transform: translateY(-2px); }
 .module-icon { flex-shrink: 0; }
 .module-info { overflow: hidden; }
 .module-name { font-weight: 600; font-size: 14px; }
 .module-status { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.section-card { margin-bottom: 16px; }
+.section-card { margin-bottom: 18px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
-.top-cmds { display: flex; flex-direction: column; gap: 6px; }
-.top-cmd-item { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 6px; border-radius: var(--radius-sm); }
-.top-cmd-item:hover { background: var(--el-fill-color-light); }
+.top-cmds { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+.top-cmd-item {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; padding: 9px 12px; border-radius: var(--radius-md);
+  background: rgba(21, 36, 58, 0.03);
+  transition:
+    transform 0.3s var(--jelly-squish),
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.top-cmd-item:hover { background: var(--el-fill-color-light); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.top-cmd-item:active { transform: translateY(0) scale(0.985); }
 .top-cmd-item code { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.top-cmd-item .op { color: var(--el-text-color-secondary); }
+.top-cmd-item .op { color: var(--el-text-color-secondary); font-size: 11px; flex-shrink: 0; }
+html.dark .top-cmd-item { background: rgba(255, 255, 255, 0.05); }
 .terminal-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { cursor: pointer; }
 .recent-list { display: flex; flex-direction: column; gap: 6px; }
 .recent-item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; cursor: pointer; border-radius: var(--radius-sm); color: var(--el-text-color-regular); }
 .recent-item:hover { background: var(--el-fill-color-light); }
 .recent-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disk-top { display: flex; flex-direction: column; gap: 10px; }
-.disk-item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.disk-item .disk-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.disk-item .disk-size { font-size: 12px; color: var(--el-text-color-secondary); }
+.ssh-list { display: flex; flex-direction: column; gap: 8px; }
+.ssh-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius-md);
+  background: rgba(21, 36, 58, 0.03); cursor: pointer;
+  transition:
+    transform 0.3s var(--jelly-squish),
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.ssh-item:hover { background: var(--el-fill-color-light); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.ssh-item:active { transform: translateY(0) scale(0.985); }
+.ssh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--el-color-danger); flex-shrink: 0; }
+.ssh-dot.online { background: var(--el-color-success); box-shadow: 0 0 0 3px rgba(103, 194, 58, 0.16); }
+.ssh-dot.warn { background: var(--el-color-warning); box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.16); }
+.ssh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ssh-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-addr { font-size: 11px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-go { color: var(--el-text-color-placeholder); flex-shrink: 0; }
+html.dark .ssh-item { background: rgba(255, 255, 255, 0.05); }
 
 /* 常用终端 */
 .fav-tip { color: var(--el-text-color-secondary); font-size: 12px; font-weight: normal; margin-left: 6px; }
@@ -530,12 +727,8 @@ onUnmounted(() => {
 .fav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; min-width: 220px; max-width: 100%;
-  background: var(--el-bg-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer; transition: all 0.2s;
+  cursor: pointer;
 }
-.fav-item:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .fav-item.opening { opacity: 0.6; pointer-events: none; }
 .fav-icon { color: var(--el-color-primary); font-size: 18px; flex-shrink: 0; }
 .fav-info { flex: 1; min-width: 0; }
@@ -554,12 +747,7 @@ onUnmounted(() => {
 .svc-item {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
   padding: 14px 16px;
-  background: var(--el-bg-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  transition: all 0.2s;
 }
-.svc-item:hover { box-shadow: var(--shadow-md); }
 .svc-item.disabled { opacity: 0.6; }
 .svc-head { flex: 1; min-width: 0; cursor: pointer; }
 .svc-title { display: flex; align-items: center; gap: 8px; }
@@ -583,4 +771,159 @@ onUnmounted(() => {
 .cmd-idx { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--el-color-primary); color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
 .cmd-del { color: var(--el-text-color-secondary); cursor: pointer; flex-shrink: 0; }
 .cmd-del:hover { color: #f56c6c; }
+
+@keyframes deck-arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ================================================================
+   果冻（Jelly / Soft-3D）试点层 —— 仅作用于首页
+   体积感 = 顶部内高光 + 底部内胶影 + 半透明胶质底 + 双层外投影
+   果冻感 = 回弹缓动 var(--jelly-squish) + 按下回弹
+   ================================================================ */
+.home-view { position: relative; }
+.jelly-ambient {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(46% 26% at 8% 0%, rgba(232, 121, 36, 0.22), transparent 68%),
+    radial-gradient(38% 24% at 94% 4%, rgba(94, 39, 80, 0.13), transparent 70%),
+    radial-gradient(50% 30% at 72% 98%, rgba(22, 160, 133, 0.14), transparent 72%);
+}
+html.dark .jelly-ambient {
+  background:
+    radial-gradient(46% 26% at 8% 0%, rgba(240, 154, 69, 0.18), transparent 68%),
+    radial-gradient(38% 24% at 94% 4%, rgba(120, 60, 140, 0.16), transparent 70%),
+    radial-gradient(50% 30% at 72% 98%, rgba(22, 160, 133, 0.12), transparent 72%);
+}
+
+/* 胶质基座 */
+.home-view .jelly {
+  position: relative;
+  background-color: var(--jelly-glass);
+  background-image: var(--jelly-sheen);
+  border: 1px solid var(--jelly-edge);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: var(--jelly-shadow);
+  transition:
+    transform 0.42s var(--jelly-squish),
+    box-shadow 0.28s ease,
+    background-color 0.28s ease;
+}
+/* WebView 不支持 backdrop-filter 时加厚胶质底，保证可读性 */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .home-view .jelly { background-color: var(--jelly-glass-strong); }
+}
+
+/* 模块快捷入口（module-card）：明显悬浮 + 颜色呼应 */
+.home-view .module-card.jelly { border-radius: var(--radius-xl); }
+.home-view .el-card.module-card.jelly:hover {
+  transform: translateY(-8px) scale(1.04);
+  box-shadow: var(--jelly-shadow-lift);
+}
+.home-view .el-card.module-card.jelly:active {
+  transform: translateY(-2px) scale(0.99);
+  box-shadow: var(--jelly-shadow-press);
+  transition-duration: 0.1s;
+}
+.home-view .module-card.jelly:hover .module-name { color: var(--el-color-primary); }
+
+/* 分区大卡（section-card）：体积感保留，位移收敛，避免阅读抖动 */
+.home-view .section-card.jelly { border-radius: var(--radius-xl); }
+.home-view .el-card.section-card.jelly:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--jelly-shadow-lift);
+}
+
+/* 内层小卡（fav-item / svc-item）：不用 blur，改用更实的胶质底，控制重绘成本 */
+.home-view .fav-item.jelly,
+.home-view .svc-item.jelly {
+  border-radius: var(--radius-lg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background-color: var(--jelly-glass-strong);
+}
+.home-view .fav-item.jelly:hover,
+.home-view .svc-item.jelly:hover {
+  transform: translateY(-4px) scale(1.015);
+  box-shadow: var(--jelly-shadow-lift);
+}
+.home-view .fav-item.jelly:active,
+.home-view .svc-item.jelly:active {
+  transform: translateY(-1px) scale(0.985);
+  box-shadow: var(--jelly-shadow-press);
+  transition-duration: 0.1s;
+}
+
+/* 欢迎区：深色果冻（顶部高光、底部沉影） */
+.home-view .deck-welcome {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background-image: linear-gradient(155deg,
+      rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02) 42%, transparent 62%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -26px 34px -26px rgba(0, 0, 0, 0.55),
+    0 10px 20px -8px rgba(13, 23, 40, 0.26),
+    0 30px 48px -16px rgba(13, 23, 40, 0.34);
+  transition: transform 0.5s var(--jelly-squish), box-shadow 0.3s ease;
+}
+.home-view .deck-welcome:hover { transform: translateY(-4px); }
+
+/* 进度条：胶质轨道 + 内高光（按需作用于 el-progress 子节点） */
+.home-view :deep(.el-progress-bar__outer) {
+  background: var(--el-fill-color);
+  box-shadow:
+    inset 0 2px 3px rgba(21, 36, 58, 0.14),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.55);
+}
+.home-view :deep(.el-progress-bar__inner) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+html.dark .home-view :deep(.el-progress-bar__outer) {
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.45),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 按钮：果冻回弹 + 顶部高光带 */
+.home-view .el-button {
+  transition:
+    transform 0.3s var(--jelly-squish),
+    box-shadow 0.22s ease,
+    background-color 0.18s ease;
+}
+.home-view .el-button--primary {
+  background-image: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 52%, rgba(0, 0, 0, 0.07));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.12),
+    0 4px 10px rgba(217, 107, 30, 0.26);
+}
+.home-view .el-button--primary:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 8px 18px rgba(217, 107, 30, 0.32);
+}
+.home-view .el-button:active {
+  transform: translateY(1px) scale(0.95);
+  transition-duration: 0.1s;
+}
+
+/* 无障碍：尊重系统的「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .home-view .jelly,
+  .home-view .deck-welcome,
+  .home-view .el-button { transform: none !important; }
+}
+@keyframes mascot-float { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .deck-welcome, .deck-mascot { animation: none; }
+}
+@media (max-width: 640px) {
+  .home-view { padding: 16px 14px 28px; }
+  .deck-welcome { min-height: 148px; padding: 22px 20px; }
+  .deck-mascot { width: 104px; height: 104px; margin-right: -8px; }
+  .deck-welcome h1 { max-width: 250px; }
+}
 </style>

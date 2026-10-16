@@ -35,9 +35,12 @@ async def dependencies_missing():
 
 
 @router.post("/dependencies/install")
-async def dependencies_install(use_pkexec: bool = True):
-    """一键安装缺失的系统依赖（pkexec 弹 GUI 密码框）"""
-    return install_missing(pkexec=use_pkexec)
+async def dependencies_install(use_pkexec: bool = True, include_optional: bool = False):
+    """一键安装缺失的系统依赖（pkexec 弹 GUI 密码框）
+
+    include_optional=true 时会连同可选工具（如 sshpass）一起装
+    """
+    return install_missing(pkexec=use_pkexec, include_optional=include_optional)
 
 
 # ── GPU 进程详情 ──

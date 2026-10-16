@@ -6,43 +6,76 @@
 :root {
   --sidebar-width: 220px;
 
-  /* ── 品牌色（玫红主题 · 参考 Ubuntu 经典酒红/玫红系） ── */
-  --ub-rose: #e91e63;            /* 玫红 —— 主色 */
-  --ub-rose-soft: #f06292;       /* 亮玫红（渐变、悬停） */
-  --ub-rose-light: #f48fb1;      /* 浅玫红 */
-  --ub-rose-bg: #fdebf2;         /* 主色极浅背景 */
-  --ub-rose-deep: #c2185b;       /* 深玫红 */
-  --ub-aubergine: #772953;       /* 酒红紫 —— 强调色 */
-  --ub-aubergine-deep: #5e2750;  /* 深茄子紫 */
-  --ub-warm-grey: #aea79f;       /* 暖灰 —— 中性辅助 */
-  --ub-ink: #2c2c2c;
+  /* Deckpit brand: flight-deck navy, warm timber, and the mascot's amber. */
+  --ub-rose: #e87924;
+  --ub-rose-soft: #f3a342;
+  --ub-rose-light: #ffc978;
+  --ub-rose-bg: #fff0d7;
+  --ub-rose-deep: #b94f18;
+  --ub-aubergine: #15243a;
+  --ub-aubergine-deep: #0d1728;
+  --ub-warm-grey: #81796e;
+  --ub-ink: #202833;
+  --deck-navy: #15243a;
+  --deck-navy-deep: #0d1728;
+  --deck-amber: #e87924;
+  --deck-cream: #f7f3eb;
+  --deck-wood: #98633d;
 
   /* ── 圆角体系（大圆角） ── */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 24px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
   --radius-pill: 999px;
 
   /* ── 柔和阴影体系 ── */
-  --shadow-sm: 0 1px 2px rgba(31, 15, 8, 0.04), 0 2px 8px rgba(31, 15, 8, 0.05);
-  --shadow-md: 0 4px 12px rgba(31, 15, 8, 0.06), 0 10px 28px rgba(31, 15, 8, 0.06);
-  --shadow-lg: 0 12px 36px rgba(31, 15, 8, 0.12), 0 4px 12px rgba(31, 15, 8, 0.06);
-  --shadow-brand: 0 6px 16px rgba(233, 30, 99, 0.28);
+  --shadow-sm: 0 1px 2px rgba(21, 36, 58, 0.06), 0 3px 10px rgba(21, 36, 58, 0.04);
+  --shadow-md: 0 8px 22px rgba(21, 36, 58, 0.09);
+  --shadow-lg: 0 18px 44px rgba(13, 23, 40, 0.18);
+  --shadow-brand: 0 5px 14px rgba(232, 121, 36, 0.24);
+
+  /* ── 果冻（Jelly / Soft-3D）体系：首页试点，验证后可全站推广 ──
+     体积感 = 顶部内高光 + 底部内胶影 + 半透明胶质底 + 双层外投影
+     果冻感 = 回弹缓动 --jelly-squish + 按下回弹 */
+  --jelly-glass: rgba(255, 253, 249, 0.42);
+  --jelly-glass-strong: rgba(255, 253, 249, 0.7);
+  --jelly-edge: rgba(255, 255, 255, 0.75);
+  --jelly-sheen: radial-gradient(120% 92% at 10% -8%,
+      rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.08) 44%, rgba(255, 255, 255, 0) 68%);
+  --jelly-squish: cubic-bezier(.34, 1.56, .64, 1);
+  --jelly-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    inset 0 14px 18px -16px rgba(255, 255, 255, 0.9),
+    inset 0 -14px 20px -14px rgba(21, 36, 58, 0.2),
+    0 2px 4px rgba(232, 121, 36, 0.1),
+    0 10px 18px -8px rgba(21, 36, 58, 0.16);
+  --jelly-shadow-lift:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    inset 0 14px 18px -16px rgba(255, 255, 255, 1),
+    inset 0 -16px 22px -14px rgba(21, 36, 58, 0.24),
+    0 8px 14px -4px rgba(232, 121, 36, 0.22),
+    0 26px 40px -12px rgba(21, 36, 58, 0.26);
+  --jelly-shadow-press:
+    inset 0 2px 5px rgba(21, 36, 58, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(21, 36, 58, 0.1);
 
   /* ── Element Plus 主色覆盖（亮色 · 玫红） ── */
-  --el-color-primary: #e91e63;
-  --el-color-primary-light-3: #f06292;
-  --el-color-primary-light-5: #f48fb1;
-  --el-color-primary-light-7: #f8bbd0;
-  --el-color-primary-light-8: #fad3e0;
-  --el-color-primary-light-9: #fdebf2;
-  --el-color-primary-dark-2: #c2185b;
+  --el-color-primary: #d96b1e;
+  --el-color-primary-light-3: #e99043;
+  --el-color-primary-light-5: #f2b36f;
+  --el-color-primary-light-7: #f8d4a7;
+  --el-color-primary-light-8: #fbe3c4;
+  --el-color-primary-light-9: #fff0d7;
+  --el-color-primary-dark-2: #ad4c12;
 
   /* ── Element Plus 圆角 / 阴影覆盖 ── */
-  --el-border-radius-base: 10px;
-  --el-border-radius-small: 8px;
+  --el-border-radius-base: 7px;
+  --el-border-radius-small: 5px;
   --el-border-radius-round: var(--radius-pill);
   --el-border-radius-circle: 100%;
   --el-box-shadow: var(--shadow-md);
@@ -51,33 +84,58 @@
   --el-box-shadow-dark: var(--shadow-lg);
 
   /* ── 页面底色：微粉暖白，SaaS 感 ── */
-  --el-bg-color-page: #f8f5f6;
-  --el-bg-color: #ffffff;
-  --el-bg-color-overlay: #ffffff;
+  --el-bg-color-page: #f3f0e9;
+  --el-bg-color: #fffdf9;
+  --el-bg-color-overlay: #fffdf9;
 }
 
 /* ================================================================
    暗色模式覆盖
    ================================================================ */
 html.dark {
-  --ub-rose-bg: rgba(233, 30, 99, 0.12);
+  --ub-rose-bg: rgba(232, 121, 36, 0.14);
 
-  --el-color-primary: #e91e63;
-  --el-color-primary-light-3: #c2185b;
-  --el-color-primary-light-5: #9c1446;
-  --el-color-primary-light-7: #7a0f38;
-  --el-color-primary-light-8: #5c0b2b;
-  --el-color-primary-light-9: #3e071e;
-  --el-color-primary-dark-2: #f06292;
+  --el-color-primary: #f09a45;
+  --el-color-primary-light-3: #ce7328;
+  --el-color-primary-light-5: #a9581d;
+  --el-color-primary-light-7: #713c1b;
+  --el-color-primary-light-8: #4f2e1c;
+  --el-color-primary-light-9: #33251e;
+  --el-color-primary-dark-2: #ffc078;
 
-  --el-bg-color-page: #161213;
-  --el-bg-color: #1c1819;
-  --el-bg-color-overlay: #232021;
+  --el-bg-color-page: #111923;
+  --el-bg-color: #192431;
+  --el-bg-color-overlay: #202d3b;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-brand: 0 6px 16px rgba(233, 30, 99, 0.35);
+  --shadow-brand: 0 5px 16px rgba(232, 121, 36, 0.24);
+
+  /* ── 果冻体系 · 暗色：胶质底变暗，高光转为冷白描边 ── */
+  --jelly-glass: rgba(32, 45, 59, 0.45);
+  --jelly-glass-strong: rgba(37, 52, 68, 0.72);
+  --jelly-edge: rgba(255, 255, 255, 0.13);
+  --jelly-sheen: radial-gradient(120% 92% at 10% -8%,
+      rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02) 44%, rgba(255, 255, 255, 0) 68%);
+  --jelly-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 14px 18px -16px rgba(255, 255, 255, 0.12),
+    inset 0 -14px 20px -14px rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 10px 20px -8px rgba(0, 0, 0, 0.5);
+  --jelly-shadow-lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 14px 18px -16px rgba(255, 255, 255, 0.18),
+    inset 0 -16px 22px -14px rgba(0, 0, 0, 0.55),
+    0 10px 16px -4px rgba(240, 154, 69, 0.16),
+    0 28px 44px -12px rgba(0, 0, 0, 0.6);
+  --jelly-shadow-press:
+    inset 0 2px 6px rgba(0, 0, 0, 0.45),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 /* ================================================================
@@ -96,23 +154,13 @@ html, body, #app {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 层次背景：多层径向渐变光晕（玫红/深玫红/酒红紫）+ 顶部微粉渐变，fixed 保证滚动时层次感稳定 */
+/* A quiet warm canvas keeps the operational panels readable. */
 body {
-  background:
-    radial-gradient(1100px 560px at 88% -10%, rgba(233, 30, 99, 0.10), transparent 62%),
-    radial-gradient(900px 480px at -10% 6%, rgba(194, 24, 91, 0.08), transparent 60%),
-    radial-gradient(760px 460px at 52% 112%, rgba(119, 41, 83, 0.07), transparent 64%),
-    linear-gradient(180deg, #fdf2f7 0%, var(--el-bg-color-page) 42%);
-  background-attachment: fixed;
+  background: var(--el-bg-color-page);
 }
 
 html.dark body {
-  background:
-    radial-gradient(1100px 560px at 88% -10%, rgba(233, 30, 99, 0.13), transparent 62%),
-    radial-gradient(900px 480px at -10% 6%, rgba(194, 24, 91, 0.10), transparent 60%),
-    radial-gradient(760px 460px at 52% 112%, rgba(119, 41, 83, 0.12), transparent 64%),
-    linear-gradient(180deg, #201419 0%, var(--el-bg-color-page) 42%);
-  background-attachment: fixed;
+  background: var(--el-bg-color-page);
 }
 
 /* 悬浮小屏（quickpalette）宿主：html/body 默认全透明 —— 圆角面板四角直接透出桌面，
@@ -125,12 +173,33 @@ body.palette-host {
    注意：不可用 background-attachment: fixed —— WebKitGTK 下 fixed 渐变背景渲染异常，只绘制上半部分，下方会露出窗口黑底 */
 html.palette-host.palette-opaque,
 body.palette-host.palette-opaque {
-  background: linear-gradient(180deg, #fdf2f7 0%, #f8f5f6 100%);
+  background: linear-gradient(180deg, #fff8eb 0%, #f3f0e9 100%);
 }
 html.dark.palette-host.palette-opaque,
 html.dark body.palette-host.palette-opaque {
-  background: linear-gradient(180deg, #201419 0%, #161213 100%);
+  background: linear-gradient(180deg, #192431 0%, #111923 100%);
 }
+
+/* ================================================================
+   全局水印：固定在视口正中，滚动时不跟随内容
+   z-index: -1 使其位于所有常规内容之下、页面底色之上
+   ================================================================ */
+.app-container::before {
+  content: '';
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 62vw);
+  height: min(720px, 62vw);
+  background: url('./deckpit-watermark.png') center / contain no-repeat;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: -1;
+}
+html.dark .app-container::before { opacity: 0.06; }
+/* 悬浮小屏是透明浮层，不叠水印 */
+html.palette-host .app-container::before { display: none; }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
@@ -210,10 +279,11 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 .el-button {
   border-radius: 10px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: transform 140ms cubic-bezier(.22,1,.36,1), box-shadow 180ms ease,
+    background-color 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 .el-button--primary {
-  box-shadow: 0 2px 8px rgba(233, 30, 99, 0.22);
+  box-shadow: 0 2px 8px rgba(217, 107, 30, 0.18);
 }
 .el-button--primary:hover {
   box-shadow: var(--shadow-brand);
@@ -327,8 +397,8 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   background: var(--el-fill-color-light);
 }
 .el-menu--vertical .el-menu-item.is-active {
-  background: linear-gradient(120deg, var(--ub-rose), var(--ub-rose-soft));
-  color: #fff;
+  background: var(--el-color-primary);
+  color: #171d26;
   font-weight: 600;
   box-shadow: var(--shadow-brand);
 }
@@ -365,6 +435,12 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 .el-empty__image {
   background: var(--el-color-primary-light-9);
   border-radius: var(--radius-lg);
+}
+
+::selection { background: var(--el-color-primary-light-7); color: var(--deck-navy-deep); }
+:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
 /* ── 进度条：圆角轨道 ── */
@@ -423,4 +499,203 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 /* ── 代码块 / 终端输出区 ── */
 code, pre {
   font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
+}
+
+/* Deckpit control-deck finish: focused motion and stronger module hierarchy. */
+.app-main .page-title {
+  font-size: clamp(23px, 2vw, 30px) !important;
+  font-weight: 760 !important;
+  letter-spacing: -.55px !important;
+  margin-bottom: 20px !important;
+  gap: 12px !important;
+}
+.app-main .page-title::before {
+  width: 5px; height: 27px; border-radius: 2px;
+  background: var(--deck-amber); box-shadow: 3px 0 0 rgba(232,121,36,.14);
+}
+.app-main .module-purpose {
+  margin: -12px 0 18px 17px; max-width: 760px; color: var(--el-text-color-secondary);
+  font-size: 13px; line-height: 1.55;
+}
+.app-main .toolbar {
+  padding: 12px; border: 1px solid rgba(21,36,58,.08); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--el-bg-color) 88%, var(--deck-cream));
+  box-shadow: 0 3px 12px rgba(21,36,58,.035);
+}
+.app-main .el-button { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
+.app-main .el-button:active { transform: translateY(1px) scale(.98); }
+.app-main .el-button:not(.is-disabled):hover .el-icon { transform: translateX(2px); }
+.app-main .el-button .el-icon { transition: transform 180ms cubic-bezier(.22,1,.36,1); }
+.app-main .el-button.is-loading .el-icon { transform: none; }
+.app-main .el-button--primary { font-weight: 650; }
+.app-main .el-tabs__item { transition: color .18s ease, background .18s ease; font-weight: 550; }
+.app-main .el-tabs__item.is-active { font-weight: 700; }
+.app-main .el-table tbody tr { transition: background-color .16s ease; }
+.app-main .el-table tbody tr:hover > td { background: var(--el-color-primary-light-9) !important; }
+.app-main .el-card:hover { transform: translateY(-2px); }
+.app-main .el-empty__description p { color: var(--el-text-color-secondary); }
+
+/* Commands: 命令本体用浅色等宽代码块，融入淡色基调，不抢表格视觉重心 */
+.commands-view .cmd-table code {
+  display: inline-block; max-width: 100%; padding: 4px 9px; border-radius: 5px;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+  box-shadow: inset 0 0 0 1px rgba(21, 36, 58, 0.06);
+  font-size: 12px;
+}
+html.dark .commands-view .cmd-table code {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.commands-view .cmd-table .el-table__row code { transition: color 180ms ease, transform 180ms cubic-bezier(.22,1,.36,1), box-shadow 180ms ease; }
+.commands-view .cmd-table .el-table__row:hover code { color: var(--el-color-primary); box-shadow: 0 3px 10px rgba(21, 36, 58, 0.1); transform: translateX(3px); }
+.commands-view .search-input .el-input__wrapper { min-height: 40px; }
+.commands-view .cmd-tag { font-size: 10px; }
+
+/* Files: a navigator rail next to a calm, generous working canvas. */
+.files-view .files-main { gap: 18px; align-items: flex-start; }
+.files-view .bookmarks-panel { border: 0; border-radius: var(--radius-lg); background: var(--deck-navy); color: #f7f3eb; padding: 14px; box-shadow: 0 8px 22px rgba(13,23,40,.12); }
+.files-view .bookmarks-panel .panel-header { color: #f3b65f; border-color: rgba(255,255,255,.12); }
+.files-view .bookmarks-panel .bookmark-item { color: #8b8b8b; transition: background .18s ease, padding .18s ease; }
+.files-view .bookmarks-panel .bookmark-item:hover { color: #f3b65f; background: rgba(255,255,255,.1); padding-left: 11px; }
+.files-view .bookmarks-panel .bookmark-item .el-icon:first-child { transition: transform 200ms cubic-bezier(.22,1,.36,1), color 180ms ease; }
+.files-view .bookmarks-panel .bookmark-item:hover .el-icon:first-child { transform: rotate(-9deg) scale(1.14); color: #f3b65f; }
+.files-view .files-content { border-radius: var(--radius-lg); min-height: 58vh; }
+.files-view .breadcrumb { padding: 10px 13px; border-radius: var(--radius-md); background: var(--el-bg-color); }
+
+/* Ports: scan and act, with a brighter live tab and legible endpoint chips. */
+.ports-view .el-tabs--border-card { border: 0; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.ports-view .el-tabs--border-card > .el-tabs__header { background: var(--deck-navy); border-bottom: 0; }
+.ports-view .el-tabs--border-card > .el-tabs__header .el-tabs__item { color: #8b8b8b; }
+.ports-view .el-tabs--border-card > .el-tabs__header .el-tabs__item.is-active { color: var(--deck-navy); background: #f4b457; border-color: #f4b457; }
+.ports-view .addr-cell .el-tag { font-weight: 650; }
+
+/* System: instrument panel stats, steady charts, high-signal thresholds. */
+.system-view .quick-stats .el-statistic { min-height: 96px; border-top: 3px solid var(--deck-amber); border-radius: var(--radius-md); }
+.system-view .quick-stats .el-statistic__head { text-transform: uppercase; letter-spacing: .8px; font-size: 10px; font-weight: 750; }
+.system-view .chart-card { border-top: 2px solid rgba(232,121,36,.58); }
+.system-view .quick-stats .el-col { animation: instrument-settle 420ms cubic-bezier(.22,1,.36,1) both; }
+.system-view .quick-stats .el-col:nth-child(2) { animation-delay: 45ms; }
+.system-view .quick-stats .el-col:nth-child(3) { animation-delay: 90ms; }
+.system-view .quick-stats .el-col:nth-child(4) { animation-delay: 135ms; }
+.system-view .quick-stats .el-col:nth-child(5) { animation-delay: 180ms; }
+.system-view .quick-stats .el-col:nth-child(6) { animation-delay: 225ms; }
+.system-view .chart-card { transition: border-color 220ms ease, transform 220ms cubic-bezier(.22,1,.36,1); }
+.system-view .chart-card:hover { border-top-color: var(--deck-amber); transform: translateY(-2px); }
+.system-view .disk-row-clickable:hover { padding-left: 11px; padding-right: 11px; }
+
+/* Logs and terminal: darker work surfaces communicate live streams. */
+.logs-view .log-library { border: 0; border-radius: var(--radius-lg); background: var(--deck-navy); color: #e2e9f0; box-shadow: 0 7px 18px rgba(13,23,40,.12); }
+.logs-view .lib-title { color: #f3b65f; }
+.logs-view .lib-meta, .logs-view .tree-node { color: #8b8b8b; }
+.logs-view .log-library .el-tree { background: transparent; color: inherit; }
+.logs-view .log-library .el-tree-node__content { transition: background-color 150ms ease, padding-left 150ms ease; }
+.logs-view .log-library .el-tree-node__content:hover { background: rgba(255,255,255,.09); padding-left: 4px; }
+.logs-view .log-content { border-radius: 0 0 var(--radius-md) var(--radius-md); }
+.logs-view .log-content { scroll-behavior: smooth; }
+.logs-view .log-line { border-bottom-color: rgba(21,36,58,.035); }
+.terminal-view .terminal-toolbar { min-height: 56px; padding: 7px 16px; border-bottom: 2px solid var(--deck-amber); }
+.terminal-view .tab { transition: background-color 160ms ease, color 160ms ease, transform 140ms cubic-bezier(.22,1,.36,1); }
+.terminal-view .tab:active { transform: scale(.98); }
+.terminal-view .tab.active { border-top: 2px solid var(--deck-amber); box-shadow: inset 0 -2px 0 var(--el-bg-color); }
+/* 终端区底色跟随主题：与 xterm 自身主题（亮 #fff / 暗 #1e1e1e）对齐，
+   否则亮色模式下没会话时整屏近黑，且终端未铺满处会露出一圈黑边 */
+.terminal-view .terminal-area { background: var(--el-bg-color); }
+html.dark .terminal-view .terminal-area { background: #101923; }
+.terminal-view .terminal-empty { background: radial-gradient(ellipse at 50% 42%, rgba(232,121,36,.1), transparent 62%); }
+
+/* SSH / Docker / environments: sharpen active records and operational states. */
+.ssh-view .el-table, .env-view .el-table, .docker-view .el-table { border-radius: var(--radius-lg); }
+.ssh-view .el-table tbody tr:hover td { background: #fff0d7 !important; }
+html.dark .ssh-view .el-table tbody tr:hover td { background: #33251e !important; }
+.ssh-view .el-table .el-button--primary { box-shadow: 0 4px 12px rgba(217,107,30,.2); }
+.env-view .el-tabs--border-card, .docker-view .el-tabs--border-card { border: 0; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.docker-view .docker-ok, .docker-view .docker-warn { margin: 16px 20px 0; }
+.docker-view .docker-ok .el-alert { border-left: 4px solid #4c9c69; }
+.docker-view .docker-warn .el-alert { border-left: 4px solid #cc5b4f; }
+.docker-view .df-box, .env-view .section-title { border-left: 3px solid var(--deck-amber); padding-left: 12px; }
+.taxonomy-view .page-desc { max-width: 760px; padding: 12px 16px; border-left: 3px solid var(--deck-amber); background: var(--el-bg-color); border-radius: 0 var(--radius-md) var(--radius-md) 0; line-height: 1.65; }
+.app-main .module-purpose { animation: purpose-arrive 460ms cubic-bezier(.22,1,.36,1) both; }
+.deck-page-enter-active, .deck-page-leave-active { transition: opacity 170ms ease, transform 220ms cubic-bezier(.22,1,.36,1); }
+.deck-page-enter-from { opacity: 0; transform: translateY(8px); }
+.deck-page-leave-to { opacity: 0; transform: translateY(-4px); }
+.module-tabs.is-switching .el-tabs__content > .el-tab-pane:not([style*="display: none"]) { animation: pane-dock 300ms cubic-bezier(.22,1,.36,1) both; }
+.el-dialog { animation: dialog-dock 260ms cubic-bezier(.22,1,.36,1) both; }
+
+@keyframes purpose-arrive { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes instrument-settle { from { opacity: .65; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes pane-dock { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes dialog-dock { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 760px) {
+  .app-main .toolbar { gap: 8px; padding: 9px; }
+  .files-view .bookmarks-panel { width: 150px; }
+  .logs-view .logs-body { gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .system-view .quick-stats .el-col, .app-main .module-purpose, .module-tabs.is-switching .el-tab-pane,
+  .el-dialog, .deck-page-enter-active, .deck-page-leave-active { animation: none !important; transition: none !important; }
+}
+
+/* QuickPalette：端口悬浮详情（popper 被传送到 body，样式必须写在全局） */
+.el-popper .tip-row {
+  font-size: 12px; line-height: 1.75;
+  max-width: 440px; white-space: normal; word-break: break-all;
+}
+.el-popper .tip-row b { color: #c09560; }
+
+/* ================================================================
+   果冻（Jelly / Soft-3D）· 全站推广
+   首页用 .jelly 类走强化版；其余模块由这里统一接管卡片 / 统计块 / 工具条
+   ================================================================ */
+.app-main .el-card:not(.jelly),
+.app-main .el-statistic,
+.app-main .toolbar {
+  background-color: var(--jelly-glass);
+  background-image: var(--jelly-sheen);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+/* WebView 不支持 backdrop-filter 时加厚胶质底 */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .app-main .el-card:not(.jelly),
+  .app-main .el-statistic,
+  .app-main .toolbar { background-color: var(--jelly-glass-strong); }
+}
+
+.app-main .el-card:not(.jelly) {
+  border: 1px solid var(--jelly-edge);
+  box-shadow: var(--jelly-shadow);
+  transition:
+    transform 0.35s var(--jelly-squish),
+    box-shadow 0.28s ease,
+    border-color 0.28s ease;
+}
+.app-main .el-card:not(.jelly):hover {
+  transform: translateY(-3px);
+  box-shadow: var(--jelly-shadow-lift);
+}
+
+.app-main .el-statistic {
+  border: 1px solid var(--jelly-edge);
+  box-shadow: var(--jelly-shadow);
+  transition:
+    transform 0.35s var(--jelly-squish),
+    box-shadow 0.28s ease;
+}
+.app-main .el-statistic:hover {
+  transform: translateY(-4px) scale(1.015);
+  box-shadow: var(--jelly-shadow-lift);
+}
+
+.app-main .toolbar {
+  border: 1px solid var(--jelly-edge);
+  box-shadow: var(--jelly-shadow);
+}
+
+/* 分区/图表卡顶部那条重点色条：优先级需高于上面的卡片描边，否则会被 1px 描边吃掉 */
+.app-main .system-view .chart-card { border-top: 2px solid rgba(232, 121, 36, 0.58); }
+.app-main .system-view .quick-stats .el-statistic { border-top: 3px solid var(--deck-amber); }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-main .el-card:not(.jelly),
+  .app-main .el-statistic { transform: none !important; }
 }

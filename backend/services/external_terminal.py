@@ -109,7 +109,7 @@ def list_terminal_windows() -> list[dict]:
             "class": win_class,
             "title": title,
             "pid": pid,
-            "cwd": proc_info.get("cwd", ""),
+            "cwd": _resolve_cwd(proc_info, title),
             "cmdline": proc_info.get("cmdline", ""),
             "shell": proc_info.get("shell", ""),
             "children": proc_info.get("children", []),
@@ -234,6 +234,36 @@ def inject_tmux_session(win_id: str, session_name: str) -> bool:
         return send_command_to_window(win_id, f"exec tmux new-session -A -s {session_name}")
     except Exception:
         return False
+
+
+def _cwd_from_title(title: str) -> str:
+    """从终端窗口标题（shell 通过 OSC 0 写入的 PS1）里取当前目录。
+
+    wmctrl 给的窗口 PID 往往是终端模拟器服务端（如 gnome-terminal-server），
+    它的 /proc/<pid>/cwd 恒为启动目录（/home/xxx），且所有窗口共用同一个 PID，
+    无法反映某个窗口里 cd 到哪。而标题是 shell 实时设置的，形如
+    ``user@host: /mnt/项目数据/MyDashboard``，是当前目录的唯一可靠来源。
+
+    取不到（例如前台跑着 top/vim，标题被程序名占用）时返回空串，由调用方回退。
+    """
+    if not title:
+        return ""
+    title = title.strip()
+    m = re.match(r"^\S+@\S*:\s*(.*)$", title)
+    rest = (m.group(1).strip() if m else title)
+    # 只认路径样式的片段，避免把 "top"、"vim foo" 之类当成目录
+    if not (rest.startswith("/") or rest.startswith("~/") or rest == "~"):
+        return ""
+    try:
+        path = os.path.expanduser(rest)
+    except Exception:
+        return ""
+    return path if os.path.isdir(path) else ""
+
+
+def _resolve_cwd(proc_info: dict, title: str) -> str:
+    """窗口工作目录：标题优先，回退到进程自身 cwd。"""
+    return _cwd_from_title(title) or proc_info.get("cwd", "")
 
 
 def _get_proc_info(pid: int) -> dict:
@@ -469,7 +499,7 @@ def _fallback_xdotool() -> list[dict]:
                     windows.append({
                         "id": win_id, "desktop": -1, "class": pattern,
                         "title": title, "pid": pid,
-                        "cwd": proc_info.get("cwd", ""),
+                        "cwd": _resolve_cwd(proc_info, title),
                         "cmdline": proc_info.get("cmdline", ""),
                         "shell": proc_info.get("shell", ""),
                         "children": proc_info.get("children", []),

@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="login-brand">
         <div class="brand-logo">
-          <el-icon :size="20"><Monitor /></el-icon>
+          <img :src="deckpitLogo" alt="Deckpit" />
         </div>
         <div>
           <div class="brand-title">Deckpit</div>
@@ -60,6 +60,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Monitor } from '@element-plus/icons-vue'
 import { auth, login } from '../stores/auth'
+import deckpitLogo from '../assets/deckpit-logo.png'
 
 const route = useRoute()
 const loading = ref(false)
@@ -93,15 +94,24 @@ async function onSubmit() {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(1000px 500px at 15% -10%, var(--ub-rose-bg) 0%, transparent 60%),
-    var(--el-bg-color-page);
+    radial-gradient(1000px 500px at 15% -10%, var(--ub-rose-bg) 0%, transparent 60%);
+  /* 不铺不透明底色：base 色本就等于 body 底色，去掉后全局水印才能透出来 */
 }
 .login-card {
   width: 380px;
   padding: 32px 28px 24px;
   border-radius: var(--radius-2xl);
-  background: var(--el-bg-color);
-  box-shadow: var(--shadow-lg);
+  background-color: var(--jelly-glass);
+  background-image: var(--jelly-sheen);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--jelly-edge);
+  box-shadow:
+    var(--jelly-shadow),
+    0 24px 60px -16px rgba(13, 23, 40, 0.3);
+}
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .login-card { background-color: var(--jelly-glass-strong); }
 }
 .login-brand {
   display: flex;
@@ -115,11 +125,12 @@ async function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--ub-rose) 0%, var(--ub-rose-soft) 55%, var(--ub-aubergine) 130%);
-  box-shadow: var(--shadow-brand);
+  border-radius: 11px;
+  overflow: hidden;
+  background: #fffdf9;
+  box-shadow: var(--shadow-sm);
 }
+.brand-logo img { width: 100%; height: 100%; object-fit: cover; }
 .brand-title { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
 .brand-sub { font-size: 11px; color: var(--ub-warm-grey); letter-spacing: 1px; }
 .login-alert { margin-bottom: 16px; }

@@ -1,8 +1,9 @@
 <template>
   <div class="env-view">
     <h2 class="page-title">环境管理</h2>
+    <p class="module-purpose">盘点 Python、Node 与工具链环境，快速比较版本和占用。</p>
 
-    <el-tabs v-model="activeTab" type="border-card" @tab-change="onEnvTab">
+    <el-tabs v-model="activeTab" type="border-card" @tab-change="onEnvTab" :class="{ 'module-tabs': true, 'is-switching': tabSwitching }">
       <!-- uv 环境 -->
       <el-tab-pane label="uv 环境" name="uv">
         <div class="toolbar">
@@ -295,13 +296,20 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
 const envs = ref({ python: [], conda: [], node: [], uv: {}, cuda: null, java: {}, go: {} })
 const javaLoading = ref(false); const goLoading = ref(false)
 const activeTab = ref('uv')
+const tabSwitching = ref(false)
+let tabMotionTimer
+watch(activeTab, () => {
+  tabSwitching.value = true
+  clearTimeout(tabMotionTimer)
+  tabMotionTimer = setTimeout(() => { tabSwitching.value = false }, 320)
+})
 const scanPaths = ref([]); const allScannedEnvs = ref([]); const scanLoading = ref(false)
 const showPathConfig = ref(false); const pathConfigText = ref('')
 const remarkEditPath = ref(null); const remarkText = ref(''); const envFilter = ref('')

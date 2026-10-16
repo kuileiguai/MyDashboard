@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS ssh_hosts (
     username TEXT NOT NULL DEFAULT '',
     key_path TEXT NOT NULL DEFAULT '',
     jump_host TEXT NOT NULL DEFAULT '',
+    password TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -183,6 +184,11 @@ async def init_db():
             pass  # 列已存在
         try:
             await db.execute("ALTER TABLE commands ADD COLUMN scenario TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+        # SSH 主机密码（加密后存放，详见 services/ssh_secret.py）
+        try:
+            await db.execute("ALTER TABLE ssh_hosts ADD COLUMN password TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass  # 列已存在
         # 字典表首次创建时把 commands 表里已有值回填（IGNORE 不会覆盖已有）

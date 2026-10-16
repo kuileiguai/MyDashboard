@@ -88,14 +88,15 @@
         <div v-for="t in filteredExternalTerms" :key="t.id" class="ext-card">
         <div class="ext-card-top">
           <el-tag :type="t.children?.length ? 'warning' : 'success'" size="small" effect="dark">PID {{ t.pid }}</el-tag>
-          <!-- 别名 -->
+          <!-- 主位显示所在目录：user@host 那类窗口标题容易盖住真正关心的路径 -->
           <el-tag v-if="extAliases[t.id]" type="primary" effect="dark">{{ extAliases[t.id] }}</el-tag>
-          <strong v-else>{{ t.title || t.class }}</strong>
-          <span v-if="extAliases[t.id]" style="font-size:11px;color:var(--el-text-color-disabled)">({{ t.title || t.class }})</span>
+          <strong v-else-if="t.cwd" :title="t.cwd">{{ t.cwd }}</strong>
+          <strong v-else>{{ t.class }}</strong>
+          <span v-if="extAliases[t.id]" style="font-size:11px;color:var(--el-text-color-disabled)">({{ t.cwd || t.class }})</span>
           <span class="ext-alias-btn" @click="extStartAlias(t.id)" :title="extAliases[t.id] ? '修改别称' : '设置别称'">
             <el-icon :size="13"><EditPen /></el-icon>
           </span>
-          <small class="ext-class">| {{ t.class }} | 桌面{{ t.desktop }}</small>
+          <small class="ext-class">| {{ t.class }} | 桌面{{ t.desktop }}<template v-if="t.title"> | 标题 {{ t.title }}</template></small>
         </div>
         <!-- 别称编辑行 -->
         <div v-if="extAliasEditId === t.id" class="ext-card-info">
@@ -165,7 +166,8 @@ function createXtermInstance(sid, el) {
     fontSize: 14,
     fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
     theme: {
-      background: document.documentElement.classList.contains('dark') ? '#1e1e1e' : '#ffffff',
+      // 与 .terminal-area 底色对齐：亮 #fffdf9（--el-bg-color）/ 暗 #101923
+      background: document.documentElement.classList.contains('dark') ? '#101923' : '#fffdf9',
       foreground: document.documentElement.classList.contains('dark') ? '#d4d4d4' : '#333333',
       cursor: '#528bff',
       selectionBackground: '#264f78',

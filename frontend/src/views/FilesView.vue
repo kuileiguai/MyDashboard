@@ -1,6 +1,7 @@
 <template>
   <div class="files-view">
     <h2 class="page-title">文件管理器</h2>
+    <p class="module-purpose">沿着路径快速定位文件，管理书签、模板与最近打开项。</p>
     <div class="toolbar">
       <el-input v-model="currentPath" @keyup.enter="navigateTo" placeholder="输入路径..." class="path-input">
         <template #prepend><el-icon><FolderOpened /></el-icon></template>

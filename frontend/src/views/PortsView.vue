@@ -1,7 +1,8 @@
 <template>
   <div class="ports-view">
     <h2 class="page-title">端口监控</h2>
-    <el-tabs v-model="activeTab" type="border-card">
+    <p class="module-purpose">从监听端口追到进程、容器与启动路径，及时发现异常暴露。</p>
+    <el-tabs v-model="activeTab" type="border-card" :class="{ 'module-tabs': true, 'is-switching': tabSwitching }">
       <!-- 端口表格 -->
       <el-tab-pane label="监听端口" name="ports">
         <div class="toolbar">
@@ -294,6 +295,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
 const activeTab = ref('ports')
+const tabSwitching = ref(false)
+let tabMotionTimer
+watch(activeTab, () => {
+  tabSwitching.value = true
+  clearTimeout(tabMotionTimer)
+  tabMotionTimer = setTimeout(() => { tabSwitching.value = false }, 320)
+})
 const ports = ref([]); const processes = ref([])
 const loading = ref(false); const searchPort = ref(''); const searchProc = ref('')
 const procSearch = ref(''); const autoRefresh = ref(true)

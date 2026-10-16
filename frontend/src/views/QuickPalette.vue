@@ -32,8 +32,24 @@
     </div>
 
     <div class="palette-body">
-      <!-- 命令模式 -->
+      <!-- 命令模式：分类 / 服务 / 场景 三级筛选 -->
       <template v-if="mode === 'cmd'">
+        <div class="filter-bar">
+          <el-select v-model="cmdCategory" size="small" clearable placeholder="分类" class="f-sel"
+                     @change="refresh" @clear="refresh">
+            <el-option v-for="c in cmdFacets.categories" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-select v-model="cmdService" size="small" clearable placeholder="服务" class="f-sel"
+                     @change="refresh" @clear="refresh">
+            <el-option v-for="s in cmdFacets.services" :key="s" :label="s" :value="s" />
+          </el-select>
+          <el-select v-model="cmdScenario" size="small" clearable placeholder="场景" class="f-sel"
+                     @change="refresh" @clear="refresh">
+            <el-option v-for="s in cmdFacets.scenarios" :key="s" :label="s" :value="s" />
+          </el-select>
+          <el-button v-if="hasCmdFilter" size="small" text type="primary" @click="clearCmdFilters">清除</el-button>
+          <span class="filter-count">{{ filtered.length }} 条</span>
+        </div>
         <template v-if="historyItems.length">
           <div class="group-title">终端历史</div>
           <div
@@ -46,6 +62,7 @@
           >
             <span class="cmd" :title="item.command">{{ item.command }}</span>
             <span class="desc" v-if="item.description">{{ item.description }}</span>
+            <span class="meta" v-if="itemMeta(item)" :title="itemMeta(item)">{{ itemMeta(item) }}</span>
             <el-tag size="small" :type="sourceType(item.source)" class="src-tag">{{ sourceLabel(item.source) }}</el-tag>
             <span class="ops" @click.stop>
               <el-icon class="op" :class="{ on: item.is_favorite }" @click="toggleFav(item)">
@@ -67,6 +84,7 @@
           >
             <span class="cmd" :title="item.command">{{ item.command }}</span>
             <span class="desc" v-if="item.description">{{ item.description }}</span>
+            <span class="meta" v-if="itemMeta(item)" :title="itemMeta(item)">{{ itemMeta(item) }}</span>
             <el-tag size="small" :type="sourceType(item.source)" class="src-tag">{{ sourceLabel(item.source) }}</el-tag>
             <span class="ops" @click.stop>
               <el-icon class="op" :class="{ on: item.is_favorite }" @click="toggleFav(item)">
@@ -102,18 +120,29 @@
 
       <!-- 端口模式 -->
       <template v-else-if="mode === 'ports'">
-        <div
+        <el-tooltip
           v-for="(p, i) in filteredPorts"
           :key="p.port + '-' + p.protocol"
-          class="palette-item"
-          :class="{ active: i === activeIndex }"
-          @mouseenter="activeIndex = i"
-          @click="portAction(p)"
+          placement="top-start" :show-after="120" effect="dark"
         >
-          <el-tag size="small" type="primary" class="port-tag">{{ p.port }}</el-tag>
-          <span class="cmd">{{ p.protocol }}</span>
-          <span class="desc">{{ p.process_name || '未知进程' }}<template v-if="p.pid"> · PID {{ p.pid }}</template></span>
-        </div>
+          <template #content>
+            <div class="tip-row"><b>{{ p.port }}/{{ p.protocol }}</b> · {{ p.process_name || '未知进程' }}<template v-if="p.pid"> · PID {{ p.pid }}</template></div>
+            <div class="tip-row">监听: {{ p.address || '全部网卡' }}<template v-if="p.iface">（{{ p.iface }}）</template>{{ p.exposed ? ' · 对外暴露' : '' }}</div>
+            <div class="tip-row" v-if="p.container_name">容器: {{ p.container_name }}</div>
+            <div class="tip-row" v-if="p.cwd">目录: {{ p.cwd }}</div>
+            <div class="tip-row" v-if="p.command">命令: {{ p.command }}</div>
+          </template>
+          <div
+            class="palette-item"
+            :class="{ active: i === activeIndex }"
+            @mouseenter="activeIndex = i"
+            @click="portAction(p)"
+          >
+            <el-tag size="small" :type="p.exposed ? 'warning' : 'primary'" class="port-tag">{{ p.port }}</el-tag>
+            <span class="cmd">{{ p.process_name || '未知进程' }}<template v-if="p.container_name"> · {{ p.container_name }}</template></span>
+            <span class="desc">{{ portLine(p) }}</span>
+          </div>
+        </el-tooltip>
         <div v-if="!filteredPorts.length" class="empty">无匹配端口</div>
       </template>
 
@@ -128,9 +157,10 @@
           @mouseenter="activeIndex = i"
           @click="termAction(t)"
         >
-          <el-icon color="#e91e63"><Monitor /></el-icon>
-          <span class="cmd">{{ tAliases[t.id] || t.title || t.class || t.id }}</span>
-          <span class="desc" v-if="!tAliases[t.id] && t.cwd">{{ t.cwd }}</span>
+          <el-icon color="#d96b1e"><Monitor /></el-icon>
+          <!-- 主位显示终端所在目录，不再显示 user@host 那类窗口标题 -->
+          <span class="cmd">{{ termLabel(t) }}</span>
+          <span class="desc" v-if="tAliases[t.id] && t.cwd">{{ t.cwd }}</span>
           <span class="ops" @click.stop>
             <el-icon class="op" title="设置备注名" @click="setAlias('term', t)"><EditPen /></el-icon>
           </span>
@@ -172,6 +202,36 @@ const tAliases = ref({})
 const manualItems = computed(() => filtered.value.filter(x => x.source === 'command'))
 const historyItems = computed(() => filtered.value.filter(x => x.source !== 'command'))
 
+// ── 命令模式：分类 / 服务 / 场景 筛选 ──
+const cmdCategory = ref('')
+const cmdService = ref('')
+const cmdScenario = ref('')
+const hasCmdFilter = computed(() => !!(cmdCategory.value || cmdService.value || cmdScenario.value))
+
+/** 从已加载的（最多 300 条）数据里收集可选值，免去额外请求 facets */
+const cmdFacets = computed(() => {
+  const categories = new Set(), services = new Set(), scenarios = new Set()
+  for (const x of all.value) {
+    if (x.category) categories.add(x.category)
+    if (x.service) services.add(x.service)
+    if (x.scenario) scenarios.add(x.scenario)
+  }
+  const sort = s => [...s].sort((a, b) => a.localeCompare(b, 'zh'))
+  return { categories: sort(categories), services: sort(services), scenarios: sort(scenarios) }
+})
+
+function clearCmdFilters() {
+  cmdCategory.value = ''
+  cmdService.value = ''
+  cmdScenario.value = ''
+  refresh()
+}
+
+/** 行尾的分类 · 服务 · 场景 摘要 */
+function itemMeta(x) {
+  return [x.category, x.service, x.scenario].filter(Boolean).join(' · ')
+}
+
 const searchPlaceholder = computed(() => ({
   cmd: '搜索命令…', files: '搜索文件夹…', ports: '搜索端口或进程…', terms: '搜索终端…',
 }[mode.value]))
@@ -192,7 +252,12 @@ const filteredNfiles = computed(() => {
 const filteredPorts = computed(() => {
   const q = query.value.trim().toLowerCase()
   const list = ports.value || []
-  return q ? list.filter(p => String(p.port).includes(q) || (p.process_name || '').toLowerCase().includes(q)) : list
+  return q ? list.filter(p =>
+    String(p.port).includes(q)
+    || (p.process_name || '').toLowerCase().includes(q)
+    || (p.container_name || '').toLowerCase().includes(q)
+    || (p.cwd || '').toLowerCase().includes(q)
+    || (p.command || '').toLowerCase().includes(q)) : list
 })
 const filteredTerms = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -225,7 +290,14 @@ function subsequence(q, t) {
 function compute() {
   const q = query.value.trim()
   let list = all.value
-  if (q) list = list.filter(x => subsequence(q, x.command) || subsequence(q, x.description))
+  if (cmdCategory.value) list = list.filter(x => x.category === cmdCategory.value)
+  if (cmdService.value) list = list.filter(x => x.service === cmdService.value)
+  if (cmdScenario.value) list = list.filter(x => x.scenario === cmdScenario.value)
+  if (q) {
+    list = list.filter(x =>
+      subsequence(q, x.command) || subsequence(q, x.description)
+      || subsequence(q, x.category) || subsequence(q, x.service) || subsequence(q, x.scenario))
+  }
   return [...list].sort((a, b) => (b.is_favorite - a.is_favorite) || ((b.use_count || 0) - (a.use_count || 0)))
 }
 
@@ -348,6 +420,30 @@ async function termAction(t) {
     const { data } = await api.post(`/terminal/external/${t.id}/focus`)
     if (data && data.ok) ElMessage.success('已聚焦该终端')
   } catch (_) { ElMessage.error('聚焦失败') }
+}
+
+// ── 端口模式：副标题 + 悬浮详情 ──
+function portLine(p) {
+  const parts = []
+  if (p.pid) parts.push(`PID ${p.pid}`)
+  if (p.address) parts.push(p.address)
+  if (p.exposed) parts.push('对外暴露')
+  if (p.cwd) parts.push(shortPath(p.cwd))
+  return parts.join(' · ')
+}
+
+/** /a/b/c/d → …/c/d，避免长路径挤掉其它信息 */
+function shortPath(p) {
+  if (!p) return ''
+  const parts = String(p).split('/').filter(Boolean)
+  if (parts.length <= 2) return p
+  return '…/' + parts.slice(-2).join('/')
+}
+
+// ── 终端模式：标题（user@host 之类）不占主位，改显所在目录 ──
+function termLabel(t) {
+  if (tAliases.value[t.id]) return tAliases.value[t.id]
+  return t.cwd || t.class || t.id
 }
 
 // 完整信息 tooltip（平时隐藏，hover 显示）
@@ -489,12 +585,41 @@ onUnmounted(() => {
   inset: 8px;
   display: flex;
   flex-direction: column;
-  background: var(--el-bg-color);
   color: var(--el-text-color-primary);
   overflow: hidden;
   border-radius: var(--radius-xl);
-  border: 1px solid var(--el-border-color-lighter);
-  box-shadow: var(--shadow-lg);
+
+  /* 立体玻璃：半透明胶质底 + 顶部高光/底部暗角，靠 inset 高光与双层投影造厚度。
+     有合成器（真透明窗口）时直接透出桌面；无合成器时透出兜底渐变画布，立体感仍在。 */
+  background-color: rgba(255, 253, 249, 0.82);
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(0deg, rgba(13, 23, 40, 0.08) 0%, rgba(13, 23, 40, 0) 30%);
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(13, 23, 40, 0.07),
+    0 20px 44px -14px rgba(13, 23, 40, 0.38),
+    0 3px 10px -2px rgba(13, 23, 40, 0.14);
+}
+html.dark .palette {
+  background-color: rgba(24, 34, 48, 0.84);
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.20) 0%, rgba(0, 0, 0, 0) 32%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 20px 44px -14px rgba(0, 0, 0, 0.55),
+    0 3px 10px -2px rgba(0, 0, 0, 0.34);
+}
+/* 不支持 backdrop-filter 时提高不透明度，保证命令文字可读 */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .palette { background-color: rgba(255, 253, 249, 0.95); }
+  html.dark .palette { background-color: rgba(24, 34, 48, 0.96); }
 }
 /* 圆角面板四周留出呼吸感：底部/两侧内边距让内容不贴边 */
 .palette-body {
@@ -558,6 +683,20 @@ onUnmounted(() => {
   max-width: 40%;
 }
 .palette-item .src-tag { flex-shrink: 0; }
+.palette-item .meta {
+  flex-shrink: 0; max-width: 30%;
+  font-size: 11px; color: var(--el-text-color-placeholder);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 命令模式的三级筛选条 */
+.filter-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+  margin-bottom: 4px;
+}
+.filter-bar .f-sel { flex: 1; min-width: 0; }
+.filter-count { flex-shrink: 0; font-size: 11px; color: var(--el-text-color-secondary); }
 .palette-item .port-tag { flex-shrink: 0; min-width: 52px; text-align: center; }
 .palette-item .ops { display: flex; gap: 6px; flex-shrink: 0; }
 .palette-item .op { color: var(--el-text-color-secondary); cursor: pointer; }
