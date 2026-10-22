@@ -2,6 +2,7 @@
 """悬浮小屏宿主（命令随手查）
 
 - pywebview 无边框置顶窗口，加载工作台的 /quickpalette 页面
+- AI 模式：复用网页端会话/流式输出/动作确认；模型配置只在网页端
 - 自动吸附当前活动终端窗口：切到终端时贴其右缘显示，切走则隐藏
 - 全局快捷键切换显示（需 pynput，默认 Ctrl+Shift+Space）
 - 系统托盘图标（需 pystray + Pillow）
@@ -38,7 +39,9 @@ if not _has_hw_gl:
 import webview
 
 DASH_URL = os.environ.get("DASH_URL", "http://127.0.0.1:8787")
-PALETTE_URL = DASH_URL.rstrip("/") + "/quickpalette"
+# 每次启动带唯一 query，绕过 WebKit 对 index.html 的缓存；SPA 路由仍匹配 /quickpalette
+_PALETTE_VERSION = os.environ.get("PALETTE_VERSION", str(int(time.time())))
+PALETTE_URL = DASH_URL.rstrip("/") + "/quickpalette?v=" + _PALETTE_VERSION
 WIN_W = int(os.environ.get("PALETTE_WIDTH", "460"))
 WIN_H = int(os.environ.get("PALETTE_HEIGHT", "380"))
 GAP = int(os.environ.get("PALETTE_GAP", "12"))
@@ -203,6 +206,45 @@ class Api:
     def isTransparent(self):
         """是否启用透明窗口（前端据此决定 body 背景：透明透桌面 / 微粉兜底）"""
         return TRANSPARENT
+
+    def openMain(self):
+        """打开网页端工作台（模型配置只在网页端提供）。"""
+        try:
+            import webbrowser
+            return bool(webbrowser.open(DASH_URL))
+        except Exception:
+            return False
+
+    def getSize(self):
+        """当前悬浮窗尺寸（前端用来保存“AI 模式默认大小”）。"""
+        if _WINDOW is None:
+            return {"width": WIN_W, "height": WIN_H}
+        try:
+            return {"width": int(_WINDOW.width or WIN_W),
+                    "height": int(_WINDOW.height or WIN_H)}
+        except Exception:
+            return {"width": WIN_W, "height": WIN_H}
+
+    def setSize(self, width, height):
+        """调整悬浮窗尺寸，并同步 follow_loop 的定位宽度。"""
+        global WIN_W, WIN_H, _last_pos
+        if _WINDOW is None:
+            return {"width": WIN_W, "height": WIN_H}
+        try:
+            w = int(width)
+            h = int(height)
+        except (TypeError, ValueError):
+            return self.getSize()
+        sw, sh = _screen_size()
+        w = max(360, min(w, max(360, sw - 2 * GAP)))
+        h = max(300, min(h, max(300, sh - 2 * GAP)))
+        try:
+            _WINDOW.resize(w, h)
+            WIN_W, WIN_H = w, h
+            _last_pos = None
+            return {"width": w, "height": h}
+        except Exception:
+            return self.getSize()
 
 
 def toggle_window():

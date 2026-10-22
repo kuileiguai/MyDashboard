@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
 from auth import AuthMiddleware, router as auth_router
 from routers import commands, files, ports, terminal, system, logs, env, ssh, dashboard, docker
+from routers import ai as ai_router
 from ws import terminal_ws, monitor_ws, log_ws
 
 
@@ -104,6 +105,7 @@ app.include_router(env.router, prefix="/api/env", tags=["M7-Env"])
 app.include_router(ssh.router, prefix="/api/ssh", tags=["M8-SSH"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["M9-Dashboard"])
 app.include_router(docker.router, prefix="/api/docker", tags=["M10-Docker"])
+app.include_router(ai_router.router, prefix="/api/ai", tags=["M11-AI"])
 
 # WebSocket 路由
 app.websocket("/ws/terminal/{session_id}")(terminal_ws.websocket_endpoint)
@@ -124,7 +126,13 @@ if dist_path.exists():
                 return FileResponse(candidate)
         index = _dist_root / "index.html"
         if index.is_file():
-            return FileResponse(index)
+            # index.html 引用带 hash 的静态资源；入口本身不缓存，避免 pywebview/浏览器
+            # 一直加载旧构建（悬浮窗重启后仍看不到新功能）。
+            return FileResponse(index, headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            })
         raise HTTPException(404, "Not found")
 
 

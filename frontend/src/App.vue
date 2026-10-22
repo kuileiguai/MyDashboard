@@ -32,6 +32,12 @@
           <el-menu-item index="/docker"><el-icon><Box /></el-icon><span>Docker 管理</span></el-menu-item>
         </el-menu>
 
+        <div class="ai-entry" :class="{ collapsed: isCollapsed }" @click="ai.open = true">
+          <el-icon :size="16"><ChatDotRound /></el-icon>
+          <span v-if="!isCollapsed">AI 助手</span>
+          <span v-if="!isCollapsed" class="ai-entry-badge">配置百科</span>
+        </div>
+
         <div class="sidebar-footer">
           <el-tooltip v-if="auth.authenticated" content="退出登录" placement="right">
             <div class="dep-status" @click="onLogout">
@@ -60,6 +66,8 @@
         </router-view>
       </el-main>
     </el-container>
+
+    <AiAssistant />
 
     <!-- 依赖管理弹窗 -->
     <el-dialog v-model="showDepDialog" title="系统依赖管理" width="550px">
@@ -95,14 +103,17 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Sunny, Moon, CircleCheck, WarningFilled, Download, SwitchButton } from '@element-plus/icons-vue'
+import { Sunny, Moon, CircleCheck, WarningFilled, Download, SwitchButton, ChatDotRound } from '@element-plus/icons-vue'
 import DependencyBanner from './components/DependencyBanner.vue'
+import AiAssistant from './components/ai/AiAssistant.vue'
 import deckpitLogo from './assets/deckpit-logo.png'
 import api from './api'
 import { auth, refreshAuth, logout } from './stores/auth'
+import { useAiStore } from './stores/ai'
 
 const route = useRoute()
 const router = useRouter()
+const ai = useAiStore()
 const isCollapsed = ref(false)
 const isDark = ref(false)
 const isPalette = computed(() => route.name === 'QuickPalette')
@@ -196,11 +207,22 @@ async function onLogout() {
 onMounted(() => {
   window.addEventListener('dash:unauthorized', onUnauthorized)
   if (!isPalette.value && !isLogin.value) refreshDeps()
+  if (!isPalette.value) window.addEventListener('keydown', onGlobalKeydown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('dash:unauthorized', onUnauthorized)
+  window.removeEventListener('keydown', onGlobalKeydown)
 })
+
+function onGlobalKeydown(e) {
+  if (isLogin.value || isPalette.value) return
+  // Alt+A 打开/关闭 AI 助手；避免和浏览器保留快捷键冲突
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'a') {
+    e.preventDefault()
+    ai.toggleOpen()
+  }
+}
 </script>
 
 <style scoped>
@@ -244,6 +266,35 @@ onUnmounted(() => {
 .sidebar-sub { font-size: 9px; color: #d6b98f; letter-spacing: 1.35px; }
 .sidebar-menu { flex: 1; border-right: none !important; background: transparent; }
 .sidebar-footer { padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+.ai-entry {
+  margin: 4px 10px 6px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #f2d7b8;
+  background: rgba(232, 121, 36, 0.14);
+  border: 1px solid rgba(232, 121, 36, 0.28);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ai-entry:hover { background: rgba(232, 121, 36, 0.24); transform: translateY(-1px); }
+.ai-entry.collapsed { justify-content: center; padding: 10px 0; }
+.ai-entry-badge {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 500;
+  color: #e8b27c;
+  background: rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
 .app-main { height: 100vh; overflow-y: auto; padding: 0; background: transparent; }
 
 .dep-status {

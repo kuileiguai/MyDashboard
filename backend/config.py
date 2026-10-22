@@ -157,3 +157,22 @@ TRUST_PROXY = _bool("DASH_TRUST_PROXY", False)
 HISTORY_SYNC_INTERVAL = _float("DASH_HISTORY_SYNC_INTERVAL", 5.0)  # 增量同步间隔 (s)
 HISTORY_GLOBAL = _bool("DASH_HISTORY_GLOBAL", False)  # 是否同步 /home/* 下所有用户的历史
 HISTORY_MAX_ENTRIES = _int("DASH_HISTORY_MAX_ENTRIES", 5000)  # 首次导入的最大条数（可在界面「收录设置」改）
+
+# ── AI 对话 ──────────────────────────────────────────────────────
+AI_ENABLED = _bool("DASH_AI_ENABLED", True)
+AI_PROVIDER = _str("DASH_AI_PROVIDER", "openai-compatible")
+AI_BASE_URL = _str("DASH_AI_BASE_URL", "http://127.0.0.1:11434/v1")
+AI_MODEL = _str("DASH_AI_MODEL", "")
+AI_API_KEY = _str("DASH_AI_API_KEY", "")
+AI_TIMEOUT = _float("DASH_AI_TIMEOUT", 120.0)          # 单次模型请求读超时 (s)
+AI_CONNECT_TIMEOUT = _float("DASH_AI_CONNECT_TIMEOUT", 5.0)
+AI_MAX_TOKENS = _int("DASH_AI_MAX_TOKENS", 4096)
+AI_TEMPERATURE = _float("DASH_AI_TEMPERATURE", 0.3)
+AI_CONTEXT_BUDGET = _int("DASH_AI_CONTEXT_BUDGET", 32000)  # 估算 token 预算
+AI_ALLOW_CLOUD = _bool("DASH_AI_ALLOW_CLOUD", False)       # 是否允许公网模型地址
+AI_ACTION_MODE = _str("DASH_AI_ACTION_MODE", "confirm_all")  # confirm_all/confirm_stop/auto_start
+AI_MAX_TOOL_ROUNDS = _int("DASH_AI_MAX_TOOL_ROUNDS", 3)
+AI_MAX_TOOL_RESULT_BYTES = _int("DASH_AI_MAX_TOOL_RESULT_BYTES", 65536)
+AI_ACTION_TIMEOUT = _float("DASH_AI_ACTION_TIMEOUT", 60.0)
+AI_CATALOG_CACHE_TTL = _float("DASH_AI_CATALOG_CACHE_TTL", 5.0)
+AI_ENV_CACHE_TTL = _float("DASH_AI_ENV_CACHE_TTL", 60.0)

@@ -204,6 +204,9 @@
             <el-button v-else size="small" type="danger" @click.stop="svcStop(s)">
               <el-icon><VideoPause /></el-icon> 停止
             </el-button>
+            <el-button size="small" @click.stop="askAiService(s)">
+              <el-icon><ChatDotRound /></el-icon> 问 AI
+            </el-button>
             <el-button size="small" @click.stop="svcOpenDialog(s)"><el-icon><EditPen /></el-icon> 编辑</el-button>
             <el-button size="small" type="danger" plain @click.stop="svcRemove(s)"><el-icon><Delete /></el-icon> 删除</el-button>
           </div>
@@ -268,10 +271,14 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSystemStore } from '../stores/system'
+import { useAiStore } from '../stores/ai'
+import { useAiContext } from '../stores/aiContext'
 import api from '../api'
 import RingGauge from '../components/RingGauge.vue'
 
 const systemStore = useSystemStore()
+const ai = useAiStore()
+const aiContext = useAiContext()
 const router = useRouter()
 const recentFiles = ref([])
 const topCommands = ref([])
@@ -587,6 +594,11 @@ async function svcStart(s) {
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '启动失败')
   }
+}
+
+function askAiService(s) {
+  aiContext.setTarget('service', s.id, s.name)
+  ai.open = true
 }
 
 async function svcStop(s) {

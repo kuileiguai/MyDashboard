@@ -14,7 +14,9 @@
         @keydown.enter.prevent="runSelected"
         @keydown.esc="onEsc"
       >
-        <template #prefix><el-icon><Search /></el-icon></template>
+        <template #prefix>
+          <el-icon><ChatDotRound v-if="mode === 'ai'" /><Search v-else /></el-icon>
+        </template>
       </el-input>
       <el-radio-group v-model="mode" size="small" @change="onModeChange">
         <el-radio-button value="cmd">命令</el-radio-button>
@@ -31,7 +33,46 @@
       </span>
     </div>
 
-    <div class="palette-body">
+    <div class="palette-body" :class="{ 'ai-mode': mode === 'ai' }">
+      <!-- AI 模式：复用网页端会话/流式/动作卡片；模型配置仍只在网页端 -->
+      <template v-if="mode === 'ai'">
+        <div class="ai-palette">
+          <div class="ai-palette-messages" ref="aiScrollEl">
+            <div v-if="!ai.messages.length" class="ai-palette-empty">
+              <div class="ai-palette-title">AI 助手</div>
+              <div class="ai-palette-sub">问配置、查服务；启停动作需要确认。</div>
+              <div class="ai-palette-suggestions">
+                <button
+                  v-for="q in aiSuggestions"
+                  :key="q"
+                  class="ai-palette-suggestion"
+                  @click="askAi(q)"
+                >
+                  {{ q }}
+                </button>
+              </div>
+              <div v-if="ai.health && !ai.health.ok" class="ai-palette-warn">
+                模型未配置或不可用，请到网页端「AI 助手 → 设置」配置。
+                <el-button text size="small" type="primary" @click="openMain">打开网页端</el-button>
+              </div>
+            </div>
+
+            <AiMessage
+              v-for="m in ai.messages"
+              :key="m.id"
+              :message="m"
+              @confirm="ai.confirmAction"
+              @reject="ai.rejectAction"
+            />
+          </div>
+
+          <div v-if="ai.error" class="ai-palette-error">
+            <span>{{ ai.error }}</span>
+            <el-icon class="ai-palette-error-close" @click="ai.error = ''"><Close /></el-icon>
+          </div>
+        </div>
+      </template>
+
       <!-- 命令模式：分类 / 服务 / 场景 三级筛选 -->
       <template v-if="mode === 'cmd'">
         <div class="filter-bar">
@@ -147,7 +188,7 @@
       </template>
 
       <!-- 终端模式 -->
-      <template v-else>
+      <template v-else-if="mode === 'terms'">
         <div
           v-for="(t, i) in filteredTerms"
           :key="t.id"
@@ -169,19 +210,106 @@
       </template>
     </div>
 
-    <div class="palette-foot">
-      <span>{{ footHint }}</span>
+    <div class="palette-foot" :class="{ 'palette-foot-ai': mode === 'ai' }">
+      <template v-if="mode === 'ai'">
+        <span v-if="ai.usage && ai.usage.total" class="ai-palette-token" title="本会话累计 token">
+          Token {{ formatNumber(ai.usage.total) }}
+        </span>
+        <span class="ai-palette-hint">{{ ai.streaming ? '生成中…' : 'Enter 发送' }}</span>
+        <el-button v-if="ai.streaming" text size="small" @click="ai.stop">停止</el-button>
+        <el-button v-else text size="small" @click="newAiChat">新对话</el-button>
+        <el-button text size="small" title="设置 AI 对话默认窗口大小" @click="openSizeDialog">尺寸</el-button>
+        <el-button text size="small" @click="openMain">网页端</el-button>
+      </template>
+      <template v-else>
+        <span class="foot-hint">{{ footHint }}</span>
+        <el-button text size="small" class="foot-ai" title="打开 AI 助手" @click="toggleAi">
+          <el-icon><ChatDotRound /></el-icon>
+          AI
+        </el-button>
+      </template>
     </div>
+
+    <el-dialog
+      v-model="sizeDialog"
+      title="AI 对话默认尺寸"
+      width="320px"
+      append-to-body
+      class="ai-size-dialog"
+    >
+      <div class="ai-size-row">
+        <el-input-number
+          v-model="sizeForm.width"
+          :min="360"
+          :max="1600"
+          :step="20"
+          controls-position="right"
+        />
+        <span class="ai-size-x">×</span>
+        <el-input-number
+          v-model="sizeForm.height"
+          :min="300"
+          :max="1200"
+          :step="20"
+          controls-position="right"
+        />
+      </div>
+      <div class="ai-size-hint">
+        切换到 AI 模式时自动应用这个尺寸；切回命令模式会恢复原来的窗口大小。
+      </div>
+      <template #footer>
+        <div class="ai-size-footer">
+          <el-button size="small" @click="useCurrentSize">当前窗口</el-button>
+          <el-button size="small" @click="resetSizeForm">恢复默认</el-button>
+          <el-button size="small" type="primary" @click="saveSize">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
+import AiMessage from '../components/ai/AiMessage.vue'
+import { useAiStore } from '../stores/ai'
+
+const ai = useAiStore()
+const aiScrollEl = ref(null)
+const aiModeInited = ref(false)
+const aiSuggestions = [
+  '我配置了哪些服务？',
+  '有哪些容器在运行？',
+  '我有哪些常用终端？',
+  '你好，你能做什么？',
+]
+
+const AI_SIZE_KEY = 'deckpit-ai-size'
+const DEFAULT_AI_SIZE = { width: 640, height: 560 }
+
+function readAiSize() {
+  try {
+    const raw = localStorage.getItem(AI_SIZE_KEY)
+    if (!raw) return { ...DEFAULT_AI_SIZE }
+    const data = JSON.parse(raw)
+    const width = Math.round(Number(data.width) || 0)
+    const height = Math.round(Number(data.height) || 0)
+    if (width < 360 || height < 300) return { ...DEFAULT_AI_SIZE }
+    return { width, height }
+  } catch (_) {
+    return { ...DEFAULT_AI_SIZE }
+  }
+}
+
+const aiSize = ref(readAiSize())
+const preAiSize = ref(null)
+const sizeDialog = ref(false)
+const sizeForm = reactive({ width: aiSize.value.width, height: aiSize.value.height })
 
 const query = ref('')
 const mode = ref('cmd')
+const lastMode = ref('cmd')
 const all = ref([])
 const filtered = ref([])
 const activeIndex = ref(0)
@@ -234,6 +362,7 @@ function itemMeta(x) {
 
 const searchPlaceholder = computed(() => ({
   cmd: '搜索命令…', files: '搜索文件夹…', ports: '搜索端口或进程…', terms: '搜索终端…',
+  ai: '问 AI：我配置了哪些服务？',
 }[mode.value]))
 
 const footHint = computed(() => mode.value === 'cmd'
@@ -302,6 +431,7 @@ function compute() {
 }
 
 function refresh() {
+  if (mode.value === 'ai') return
   if (mode.value === 'cmd') filtered.value = compute()
   activeIndex.value = 0
 }
@@ -348,23 +478,163 @@ async function loadTerms() {
 }
 
 function refreshAll() {
-  if (mode.value === 'cmd') load()
+  if (mode.value === 'ai') loadAi()
+  else if (mode.value === 'cmd') load()
   else if (mode.value === 'files') loadNfiles()
   else if (mode.value === 'ports') loadPorts()
   else loadTerms()
 }
 
-function onModeChange(m) {
+async function onModeChange(m) {
+  // el-radio-group 的 v-model 会先改 mode 再触发 change，
+  // 所以不能用 mode.value 当“上一个模式”，必须单独记录 lastMode。
+  const prev = lastMode.value
+  lastMode.value = m
   mode.value = m
   activeIndex.value = 0
-  if (m === 'files') loadNfiles()
-  else if (m === 'ports') loadPorts()
-  else if (m === 'terms') loadTerms()
-  else load()
+  if (m === 'ai') {
+    query.value = ''
+    if (prev !== 'ai') {
+      preAiSize.value = await getPaletteSize()
+      await applyAiSize()
+    }
+    loadAi()
+  } else {
+    if (prev === 'ai') await restorePreAiSize()
+    if (m === 'files') loadNfiles()
+    else if (m === 'ports') loadPorts()
+    else if (m === 'terms') loadTerms()
+    else load()
+  }
   nextTick(() => searchRef.value?.focus())
 }
 
+function toggleAi() {
+  onModeChange(mode.value === 'ai' ? 'cmd' : 'ai')
+}
+
+async function getPaletteSize() {
+  try {
+    if (window.pywebview?.api?.getSize) {
+      const s = await window.pywebview.api.getSize()
+      if (s && s.width && s.height) return { width: Number(s.width), height: Number(s.height) }
+    }
+  } catch (_) {}
+  return {
+    width: Number(window.outerWidth) || 460,
+    height: Number(window.outerHeight) || 380,
+  }
+}
+
+async function setPaletteSize(width, height) {
+  try {
+    if (window.pywebview?.api?.setSize) {
+      const s = await window.pywebview.api.setSize(width, height)
+      if (s && s.width && s.height) return s
+    } else if (window.resizeTo) {
+      window.resizeTo(width, height)
+    }
+  } catch (_) {}
+  return { width, height }
+}
+
+async function applyAiSize() {
+  await setPaletteSize(aiSize.value.width, aiSize.value.height)
+}
+
+async function restorePreAiSize() {
+  const prev = preAiSize.value
+  preAiSize.value = null
+  if (prev) await setPaletteSize(prev.width, prev.height)
+}
+
+function openSizeDialog() {
+  sizeForm.width = aiSize.value.width
+  sizeForm.height = aiSize.value.height
+  sizeDialog.value = true
+}
+
+async function useCurrentSize() {
+  const s = await getPaletteSize()
+  sizeForm.width = s.width
+  sizeForm.height = s.height
+}
+
+function resetSizeForm() {
+  sizeForm.width = DEFAULT_AI_SIZE.width
+  sizeForm.height = DEFAULT_AI_SIZE.height
+}
+
+async function saveSize() {
+  const width = Math.round(Number(sizeForm.width) || 0)
+  const height = Math.round(Number(sizeForm.height) || 0)
+  if (width < 360 || height < 300) {
+    ElMessage.warning('尺寸不能小于 360 × 300')
+    return
+  }
+  aiSize.value = { width, height }
+  try { localStorage.setItem(AI_SIZE_KEY, JSON.stringify(aiSize.value)) } catch (_) {}
+  if (mode.value === 'ai') await setPaletteSize(width, height)
+  sizeDialog.value = false
+  ElMessage.success(`AI 对话尺寸已保存：${width} × ${height}`)
+}
+
+async function loadAi() {
+  try {
+    if (!ai.loaded) await ai.loadConversations()
+    await ai.loadHealth()
+    if (!aiModeInited.value) {
+      aiModeInited.value = true
+      if (!ai.activeId && !ai.messages.length && ai.conversations.length) {
+        await ai.openChat(ai.conversations[0].id)
+      }
+    }
+  } catch (_) {}
+  nextTick(scrollAi)
+}
+
+async function sendAi() {
+  const text = query.value.trim()
+  if (!text || ai.streaming) return
+  query.value = ''
+  await ai.sendMessage(text, { route: '/quickpalette' })
+  nextTick(scrollAi)
+}
+
+function askAi(text) {
+  query.value = text
+  sendAi()
+}
+
+function newAiChat() {
+  if (ai.streaming) ai.stop()
+  aiModeInited.value = true
+  ai.newChat()
+  query.value = ''
+  nextTick(scrollAi)
+}
+
+function scrollAi() {
+  const el = aiScrollEl.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('zh-CN')
+}
+
+async function openMain() {
+  try {
+    if (window.pywebview?.api?.openMain) {
+      await window.pywebview.api.openMain()
+      return
+    }
+  } catch (_) {}
+  window.open('/', '_blank')
+}
+
 function currentList() {
+  if (mode.value === 'ai') return []
   if (mode.value === 'cmd') return filtered.value
   if (mode.value === 'files') return filteredNfiles.value
   if (mode.value === 'ports') return filteredPorts.value
@@ -382,13 +652,18 @@ function move(d) {
 }
 
 function runSelected() {
+  if (mode.value === 'ai') {
+    sendAi()
+    return
+  }
   const list = currentList()
   const item = list[activeIndex.value]
   if (item) dispatch(item)
 }
 
 function dispatch(item) {
-  if (mode.value === 'cmd') run(item)
+  if (mode.value === 'ai') sendAi()
+  else if (mode.value === 'cmd') run(item)
   else if (mode.value === 'files') nautilusAction(item)
   else if (mode.value === 'ports') portAction(item)
   else termAction(item)
@@ -545,6 +820,11 @@ function onGlobalKey(e) {
   }
 }
 
+watch(
+  () => [ai.messages.length, ai.messages[ai.messages.length - 1]?.content],
+  () => nextTick(scrollAi),
+)
+
 onMounted(() => {
   // html/body 默认透明（透桌面）由 palette-host 提供；仅当透明窗口被禁用/不可用时补 palette-opaque 兜底
   document.documentElement.classList.add('palette-host')
@@ -639,7 +919,7 @@ html.dark .palette {
   padding: 10px;
   border-bottom: 1px solid var(--el-border-color-light);
 }
-.palette-head .el-input { flex: 1; }
+.palette-head .el-input { flex: 1; min-width: 0; }
 .head-ops { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .head-op { cursor: pointer; color: var(--el-text-color-secondary); padding: 3px; border-radius: 3px; }
 .head-op:hover { background: var(--el-fill-color-light); color: var(--el-color-primary); }
@@ -708,6 +988,115 @@ html.dark .palette {
   border-top: 1px solid var(--el-border-color-light);
   font-size: 11px;
   color: var(--el-text-color-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+.foot-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foot-ai {
+  flex-shrink: 0;
+  padding: 0 4px;
+  color: var(--el-color-primary);
+}
+.foot-ai:hover { color: var(--el-color-primary-light-3); }
+
+/* ── AI 模式 ─────────────────────────────────────────────────── */
+.palette-body.ai-mode { overflow: hidden; padding: 0; min-height: 0; }
+.ai-palette {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ai-palette-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 10px 4px;
+}
+.ai-palette-empty { padding: 14px 6px 8px; }
+.ai-palette-title { font-size: 14px; font-weight: 700; color: var(--el-text-color-primary); }
+.ai-palette-sub { margin-top: 4px; font-size: 11px; line-height: 1.5; color: var(--el-text-color-secondary); }
+.ai-palette-suggestions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.ai-palette-suggestion {
+  text-align: left;
+  border: 1px solid var(--el-border-color-light);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-regular);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ai-palette-suggestion:hover {
+  border-color: var(--el-color-primary-light-5);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.ai-palette-warn {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.ai-palette-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 10px 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ai-palette-error span { flex: 1; }
+.ai-palette-error-close { cursor: pointer; margin-top: 1px; }
+.ai-palette :deep(.ai-msg) { margin-bottom: 12px; }
+.ai-palette :deep(.ai-assistant-head) { margin-bottom: 4px; }
+.ai-palette :deep(.ai-user-bubble) { font-size: 12px; padding: 7px 10px; }
+.ai-palette :deep(.ai-markdown) { font-size: 12px; line-height: 1.65; }
+.ai-palette :deep(.ai-markdown p) { margin-bottom: 6px; }
+.ai-palette :deep(.ai-markdown pre code) { font-size: 11px; }
+.ai-palette :deep(.ai-action-target) { font-size: 13px; }
+.palette-foot-ai {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  text-align: left;
+}
+.ai-palette-token { margin-right: auto; font-size: 10px; color: var(--el-text-color-secondary); }
+.ai-palette-hint { font-size: 10px; color: var(--el-text-color-placeholder); }
+
+.ai-size-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+}
+.ai-size-row :deep(.el-input-number) { width: 108px; }
+.ai-size-x { color: var(--el-text-color-secondary); font-size: 13px; }
+.ai-size-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
   text-align: center;
 }
+.ai-size-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ai-size-footer .el-button { margin-left: 0; }
 </style>

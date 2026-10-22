@@ -87,8 +87,19 @@
 
 ### 🎯 悬浮小屏（QuickPalette）
 - pywebview 无边框置顶小窗，聚合「命令手册 + 终端历史」模糊查找
+- **AI 模式**：在悬浮窗里直接提问，复用网页端会话、流式输出、token 统计和动作确认；模型配置只在网页端「AI 助手 → 设置」提供
+- AI 模式默认使用更紧凑的字号；底部「尺寸」可设置默认窗口大小，切换到 AI 时自动应用，切回命令模式恢复原尺寸
 - **自动吸附**：检测到你在用终端时贴其右缘显示，切走自动隐藏
 - 全局快捷键 `Ctrl+Shift+Space` 唤起，系统托盘常驻；支持"点即发送到活动终端"
+
+### 🤖 AI 助手
+- 右侧抽屉，`Alt+A` 唤起；支持多轮、流式输出、Markdown/代码块、会话历史
+- 每次回复结束展示本会话累计 token（输入 / 输出 / 合计）；模型未返回 usage 时自动标记“估算”
+- 每个代码块和整条回复都有复制按钮；局域网 HTTP 访问时会回退到兼容复制方式
+- **配置百科**：直接问「我配置了哪些服务」「MyDashboard 后端怎么启动、端口多少」「我有哪些常用终端」「哪些容器在运行」，AI 会读项目/服务/命令/终端/SSH/Docker/日志源/环境配置，并区分“配置值”和“当前状态”
+- **白名单启停**：对已有服务、Docker 容器/Compose 提议 start / stop / restart；必须点确认才执行，执行后展示“前 → 后”状态
+- 模型走 OpenAI-compatible 协议，本地 Ollama / vLLM 优先，也可接 DeepSeek / OpenAI；API Key 服务端加密存储
+- 明确不做：任意命令执行、文件读写、进程 kill、Docker 删除/prune、SSH 远端执行、向终端注入命令
 
 ## 技术栈
 
@@ -99,9 +110,11 @@
 | 终端 | xterm.js + Python `pty`（fork + PTY 池管理） |
 | 图表 | ECharts (vue-echarts) |
 | 实时通信 | WebSocket（终端 I/O / 监控推送 / 日志 tail 三通道） |
+| AI | OpenAI-compatible（Ollama / vLLM / DeepSeek / OpenAI）+ `httpx` 流式 |
+| Markdown | markdown-it + highlight.js + DOMPurify |
 | 系统采集 | psutil + pynvml + `ss` / `/proc` 解析 |
 | 桌面集成 | wmctrl + xdotool + pywebview（悬浮小屏） |
-| 存储 | SQLite 单文件（14 张表） |
+| 存储 | SQLite 单文件（19 张表） |
 | 部署 | venv + systemd user service |
 
 ## 架构
@@ -298,14 +311,16 @@ Deckpit/
 │   │   ├── env.py            #   环境探测/.env/CUDA
 │   │   ├── ssh.py            #   SSH 主机/远程收藏/config 导入
 │   │   ├── dashboard.py      #   首页聚合/项目/一键操作
-│   │   └── docker.py         #   容器/镜像/卷/网络/compose
-│   ├── services/             # 12 个业务服务
+│   │   ├── docker.py         #   容器/镜像/卷/网络/compose
+│   │   └── ai.py             #   AI 会话/配置百科/动作确认
+│   ├── services/             # 业务服务
 │   │   ├── pty_manager.py    #   PTY 会话池（核心：fork+pty+scrollback 回放）
 │   │   ├── monitor_service.py#   psutil/pynvml 采样循环（动态频率）
 │   │   ├── port_service.py   #   ss 解析 + /proc inode 反查 + 父进程链
 │   │   ├── docker_service.py #   Docker CLI 封装
 │   │   ├── external_terminal.py # wmctrl+xdotool 外部终端控制
 │   │   ├── history_sync.py   #   shell 历史后台增量同步
+│   │   ├── ai/               #   Provider/Catalog/Tools/Actions/Chat
 │   │   └── ...               #   env/log/tmux/dependency/file/clipboard
 │   ├── ws/                   # 3 个 WebSocket 端点
 │   │   ├── terminal_ws.py    #   终端双向桥（重连先回放 scrollback）
@@ -315,9 +330,9 @@ Deckpit/
 ├── frontend/
 │   └── src/
 │       ├── views/            # 11 个页面视图（含 QuickPalette）
-│       ├── components/       # DependencyBanner 等公共组件
-│       ├── stores/           # Pinia（terminal/system）
-│       ├── api/              # axios 封装 + WS 客户端（自动重连/心跳）
+│       ├── components/       # DependencyBanner + ai/（抽屉/消息/动作卡片）
+│       ├── stores/           # Pinia（terminal/system/ai）
+│       ├── api/              # axios 封装 + WS 客户端 + AI 流式
 │       └── router/           # 路由配置
 ├── scripts/
 │   ├── dev.sh               # 开发模式（前后端并行）
@@ -331,7 +346,7 @@ Deckpit/
 
 ## API 概览
 
-REST 前缀：`/api/commands`、`/api/files`、`/api/ports`、`/api/processes`、`/api/systemd`、`/api/terminal`、`/api/system`、`/api/logs`、`/api/env`、`/api/ssh`、`/api/docker`、`/api/dashboard`
+REST 前缀：`/api/commands`、`/api/files`、`/api/ports`、`/api/processes`、`/api/systemd`、`/api/terminal`、`/api/system`、`/api/logs`、`/api/env`、`/api/ssh`、`/api/docker`、`/api/dashboard`、`/api/ai`
 
 WebSocket 端点：
 
@@ -355,8 +370,41 @@ WebSocket 端点：
 | `PTY_MAX_SESSIONS` | `20` | 最大并发终端会话数 |
 | `HISTORY_SYNC_INTERVAL` | `5.0s` | shell 历史同步间隔 |
 | `DISK_ALERT_THRESHOLD` | `0.90` | 磁盘使用率预警阈值 |
+| `DASH_AI_ENABLED` | `1` | AI 助手总开关 |
+| `DASH_AI_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible 模型地址 |
+| `DASH_AI_MODEL` | 空 | 模型名，如 `qwen2.5:14b` |
+| `DASH_AI_API_KEY` | 空 | 云端模型 Key（也可在页面设置里填，服务端加密） |
+| `DASH_AI_TIMEOUT` | `120` | 模型请求超时（秒） |
+| `DASH_AI_CONTEXT_BUDGET` | `32000` | 估算 token 预算；本地 8k 模型请调小 |
+| `DASH_AI_ALLOW_CLOUD` | `0` | 是否允许公网模型地址 |
+| `DASH_AI_ACTION_MODE` | `confirm_all` | 动作确认策略 |
 
 环境变量名统一带 `DASH_` 前缀（如 `DASH_HISTORY_SYNC_INTERVAL`），上表列的是 `config.py` 里的常量名。
+
+### AI 助手配置
+
+1. 本地模型（推荐）：先启动 Ollama / vLLM，确认有 OpenAI-compatible 的 `/v1` 接口。
+2. 在 `~/.config/deckpit.env` 或页面「AI 助手 → 设置」里填：
+
+```bash
+DASH_AI_BASE_URL=http://127.0.0.1:11434/v1
+DASH_AI_MODEL=qwen2.5:14b
+# 云端才需要：
+# DASH_AI_API_KEY=...
+# DASH_AI_ALLOW_CLOUD=1
+```
+
+3. 重启后端，打开页面点侧边栏「AI 助手」，或按 `Alt+A`。
+4. 设置页有「测试连接」；没有模型时可用 `DASH_AI_PROVIDER=mock` 做 UI 联调（Mock 不会执行任何动作）。
+
+AI 的能力边界：只查询已配置信息 + 对已有服务/容器/Compose 提议启停；不执行任意命令、不读写文件、不 kill 进程、不做 SSH 远端操作。所有动作都需要前端确认，并写入 `ai_actions` 审计表。
+
+本地验收：
+
+```bash
+cd backend && .venv/bin/python -m pytest -q
+cd ../frontend && npm run build
+```
 
 ## 局域网 / 远程访问
 
@@ -496,6 +544,8 @@ DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史�
 - kill 默认 SIGTERM，SIGKILL 需显式选择；展示完整 cmdline 防误杀
 - 文件操作经 `Path.resolve()` 前缀校验，拒绝 `..` 与符号链接逃逸
 - `.env` 敏感值展示默认打码
+- AI 动作只接受“目标 ID + 白名单动作”，不接受模型生成的 shell 命令；动作必须前端确认，并写入 `ai_actions` 审计
+- AI 上下文不含 SSH 密码、`.env` 原值、Provider Key；模型只能查询配置和对已有对象提议启停
 
 ## 已知限制
 
@@ -504,6 +554,11 @@ DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史�
 - 远程主机管理未做——SSH 模块仅"发起连接"，不是远端面板
 - systemd 用户服务需由 `scripts/setup.sh` 安装（它会按实际路径生成 unit）；手动迁移目录后需重跑 setup
 - 远程登录会话保存在服务端内存，服务重启后远程客户端需重新登录
+- AI 助手需要单独配置模型；未配置时入口可用但只提示“未配置模型”，不影响主应用
+- 服务运行状态保存在后端内存，后端重启后需重新查询/启动；AI 回答会标注状态来源
+- 如果服务端口在监听但不是面板启动的进程，AI 会拒绝 stop/restart（无法安全接管外部进程）
+- AI 的 Compose 动作用 `stop` 而不是 `down`（避免移除容器）；不会执行 `rm` / `prune` / `kill`
+- AI 会话、动作审计保存在 SQLite；模型上下文里不含 SSH 密码、`.env` 原值和 API Key
 
 ## 文档
 

@@ -7,3 +7,13 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 reasonix.toml
+
+# 本机运行数据 / 密钥，不要上传
+data/.ssh_key
+data/dashboard.db
+data/logs/
+data/*.db-wal
+data/*.db-shm
+
+# 临时调试产物
+.tmp-*

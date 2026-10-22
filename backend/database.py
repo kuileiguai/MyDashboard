@@ -157,6 +157,80 @@ CREATE TABLE IF NOT EXISTS taxonomy (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (type, value)
 );
+
+-- ── AI 对话 ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    project_id INTEGER,
+    model TEXT NOT NULL DEFAULT '',
+    context_json TEXT NOT NULL DEFAULT '{}',
+    summary TEXT NOT NULL DEFAULT '',
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    tool_calls_json TEXT NOT NULL DEFAULT '[]',
+    tool_call_id TEXT NOT NULL DEFAULT '',
+    tokens_in INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    tokens_estimated INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_tool_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    message_id INTEGER,
+    name TEXT NOT NULL,
+    args_json TEXT NOT NULL DEFAULT '{}',
+    result_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'ok',
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    message_id INTEGER,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_name TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL,
+    before_status TEXT NOT NULL DEFAULT '',
+    after_status TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    confirmed_by TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '{}',
+    error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TIMESTAMP,
+    finished_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT 'default',
+    kind TEXT NOT NULL DEFAULT 'openai-compatible',
+    base_url TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    api_key_enc TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    extra_json TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_ai_actions_conv_status ON ai_actions(conversation_id, status);
+CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated ON ai_conversations(updated_at DESC);
 """
 
 
@@ -189,6 +263,12 @@ async def init_db():
         # SSH 主机密码（加密后存放，详见 services/ssh_secret.py）
         try:
             await db.execute("ALTER TABLE ssh_hosts ADD COLUMN password TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+        # AI 消息 token 是否来自估算（模型未返回 usage 时）
+        try:
+            await db.execute(
+                "ALTER TABLE ai_messages ADD COLUMN tokens_estimated INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass  # 列已存在
         # 字典表首次创建时把 commands 表里已有值回填（IGNORE 不会覆盖已有）
