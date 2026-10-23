@@ -316,7 +316,7 @@ do_bundle() {
     --exclude='scripts/dev.sh' \
     --exclude='scripts/check-env.sh' \
     --exclude='data' \
-    backend frontend/dist scripts
+    backend frontend/dist scripts assets
   tar -xf "$tmp/source.tar" -C "$bundle"
   rm -f "$tmp/source.tar"
 

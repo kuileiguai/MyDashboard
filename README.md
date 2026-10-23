@@ -1,10 +1,55 @@
 # Deckpit — 自建 Linux 开发者工作台
 
+<p align="center">
+  <img src="assets/readme-banner.png" alt="Deckpit — 自建 Linux 开发者工作台">
+</p>
+
+<p align="center">
+  <img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white">
+  <img alt="Vue" src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white">
+  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white">
+  <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-yes-d96b1e">
+</p>
+
+<p align="center">
+  <strong>命令 · 终端 · 文件 · 端口 · 监控 · Docker · SSH</strong><br>
+  一个运行在 <code>http://localhost:8787</code> 的自托管开发工作台
+</p>
+
 > **Deckpit** = Deck（甲板/卡片面板）+ Cockpit（驾驶舱）——一块卡片式面板，当你的开发驾驶舱。
 
 一个运行在 `http://localhost:8787` 的本地 Web 工作台，把开发者日常高频操作——**命令速查、文件管理、端口/进程、终端、系统监控、日志、环境、SSH、Docker**——统一到一个页面里：可看、可搜、可点、可拖。
 
 面向单用户（开发者本人），基准环境 **Ubuntu 22.04 + GNOME**，零外网依赖。默认监听 `0.0.0.0:8787` 以便局域网内其他机器访问，但**本机访问免登录、非本机访问需账号密码**（未配置口令时非本机一律拒绝）。
+
+<p align="center"><a href="#部署"><strong>→ 快速开始 / 部署</strong></a></p>
+
+## 界面预览
+
+<p align="center">
+  <img src="assets/screenshots/home.png" width="49%" alt="首页：系统状态与快捷入口">
+  <img src="assets/screenshots/system.png" width="49%" alt="系统监控：CPU/内存/GPU">
+</p>
+<p align="center"><sub>首页 · 系统状态、快捷入口与服务概览 &nbsp;&nbsp;|&nbsp;&nbsp; 系统监控 · CPU / 内存 / GPU / 磁盘</sub></p>
+
+<p align="center">
+  <img src="assets/screenshots/terminal.png" width="49%" alt="终端中心：多标签 PTY">
+  <img src="assets/screenshots/docker.png" width="49%" alt="Docker 管理：容器/镜像/Compose">
+</p>
+<p align="center"><sub>终端中心 · 多标签 PTY 与命令历史 &nbsp;&nbsp;|&nbsp;&nbsp; Docker 管理 · 容器、镜像与 Compose</sub></p>
+
+<p align="center">
+  <img src="assets/screenshots/commands.png" width="49%" alt="命令手册：搜索、收藏、发送">
+  <img src="assets/screenshots/files.png" width="49%" alt="文件管理器：浏览、书签、模板">
+</p>
+<p align="center"><sub>命令手册 · 搜索 / 收藏 / 一键发送 &nbsp;&nbsp;|&nbsp;&nbsp; 文件管理器 · 浏览、书签与模板</sub></p>
+
+<p align="center">
+  <img src="assets/screenshots/quickpalette.png" width="360" alt="悬浮小屏 QuickPalette">
+</p>
+<p align="center"><sub>QuickPalette · Ctrl+Shift+Space 随时唤起</sub></p>
 
 ## 解决什么问题
 
@@ -350,6 +395,9 @@ Deckpit/
 │   ├── start-palette.sh     # 内部：悬浮小屏启动
 │   ├── fix-docker-perms.sh  # 内部：Docker socket/组修复
 │   └── quickpalette.py      # 悬浮小屏宿主
+├── assets/
+│   ├── readme-banner.png    # README 封面
+│   └── screenshots/         # 界面截图
 ├── data/
 │   └── dashboard.db         # SQLite 数据库（运行时生成）
 └── README.md                # 用户文档
