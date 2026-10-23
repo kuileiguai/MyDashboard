@@ -6,6 +6,7 @@ import fcntl
 import struct
 import termios
 import asyncio
+import signal
 import time
 import uuid
 from collections import deque
@@ -115,18 +116,61 @@ class PtyManager:
         if session:
             session.name = name
 
+    @staticmethod
+    def _signal_group(pid: int, sig: int) -> None:
+        """子进程 setsid 后 pgid == pid，优先杀整个进程组。"""
+        try:
+            os.killpg(pid, sig)
+        except OSError:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+
     def kill(self, sid: str):
         session = self.sessions.pop(sid, None)
         if not session:
             return
-        try:
-            os.kill(session.pid, 15)  # SIGTERM
-        except OSError:
-            pass
+        self._signal_group(session.pid, signal.SIGTERM)
         try:
             os.close(session.master_fd)
         except OSError:
             pass
+
+    def kill_all(self, grace: float = 1.5) -> None:
+        """后端退出时统一回收所有 PTY；先 SIGTERM，超时再 SIGKILL。"""
+        sessions = list(self.sessions.values())
+        if not sessions:
+            return
+        for session in sessions:
+            self._signal_group(session.pid, signal.SIGTERM)
+
+        deadline = time.monotonic() + max(0.0, grace)
+        while time.monotonic() < deadline:
+            if not any(self._alive(s.pid) for s in sessions):
+                break
+            time.sleep(0.1)
+
+        for session in sessions:
+            if self._alive(session.pid):
+                self._signal_group(session.pid, signal.SIGKILL)
+            try:
+                os.close(session.master_fd)
+            except OSError:
+                pass
+        self.sessions.clear()
 
     def list_sessions(self):
         return [s.to_dict() for s in self.sessions.values()]

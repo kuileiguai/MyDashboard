@@ -133,7 +133,7 @@
 │  ├─ services/  PTY 池·端口解析·监控采样·Docker CLI·    │
 │  │             外部终端控制·shell 历史同步·tmux 等     │
 │  ├─ ws/        终端桥接 / 监控推送 / 日志 tail         │
-│  └─ SQLite     data/dashboard.db（14 张表）           │
+│  └─ SQLite     data/dashboard.db（19 张表）           │
 └──────┬───────────┬──────────────┬────────────────────┘
        ▼           ▼              ▼
    psutil/      pty +         subprocess
@@ -159,138 +159,145 @@ Deckpit 以**运行它的那个用户**的身份工作，能力边界 = 该用�
 
 三条红线：**不要用 root 运行**、**不要把端口暴露到公网**、**口令不要用弱密码**。
 
-### 一键部署（新机器推荐）
+### 一键部署（推荐）
+
+适用于已经拿到项目目录的机器。正常部署只跑这一条：
 
 ```bash
-./scripts/setup.sh
+cd /mnt/项目数据/MyDashboard
+./scripts/deploy.sh
 ```
 
-向导依次处理（每一步都会先显示将要执行的命令再确认）：
+它会：
 
-| 步骤 | 内容 |
-|------|------|
-| 1 权限确认 | root 运行时告警并建议中止；docker 组用户额外提示 |
-| 2 依赖预检 | 调用 `check-env.sh`，输出 PASS/WARN/FAIL |
-| 3 系统依赖 | `sudo apt install` 补齐 `ss/curl/tmux/wmctrl/xdotool/xprop` |
-| 4 运行环境 | 建 `backend/.venv`、装 pip 依赖、构建 `frontend/dist` |
-| 5 监听范围 | 选 `0.0.0.0`（局域网，非本机来源需登录）或 `127.0.0.1`（仅本机） |
-| 6 登录口令 | 生成 20 位随机口令写入 `~/.config/deckpit.env`（权限 600） |
-| 7 防火墙 | `sudo ufw allow from <内网段> to any port 8787`，只放行内网 |
-| 8 开机自启 | 安装 systemd 用户服务并 enable，输出日志命令 |
+1. 缺 `backend/.venv` 时用 `uv` 创建并安装 Python 依赖；
+2. 缺 `frontend/dist` 时用 `npm ci && npm run build` 构建；
+3. 校验 Python 依赖和 dist 资源；
+4. 执行 P0：登录账号/口令、文件权限、Docker、UFW；
+5. 执行 P1：systemd user 服务、linger、历史 1s、小屏自启、日志轮转；
+6. 重启并做健康检查。
 
-非交互（全部采用推荐默认值）：`DASH_SETUP_YES=1 ./scripts/setup.sh`
+常用参数：
 
-部署后随时自检：`./scripts/check-env.sh`（含口令/权限/防火墙等安全项核对）。
+```bash
+./scripts/deploy.sh --yes --generate          # 非交互，自动生成 24 位口令
+./scripts/deploy.sh --no-docker --no-ufw      # 跳过 Docker/UFW
+./scripts/deploy.sh --no-systemd              # 只做 P0，保持手动启停
+./scripts/deploy.sh --no-palette              # 不启动/不自启悬浮小屏
+./scripts/deploy.sh --lan-cidr 192.168.4.0/24 # 指定允许访问的网段
+```
 
-### 依赖清单（手动部署时对照）
+生命周期：
 
-| 依赖 | 用途 | 缺失后果 | 安装 |
-|------|------|----------|------|
-| uv | 管理 Python 环境 | 无法创建 venv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Python ≥ 3.10 | 后端运行时 | 无法启动 | 随 uv 安装 |
-| Node ≥ 18 | 构建前端 dist | dist 缺失则生产模式无法运行 | `nvm install 20` |
-| `ss`（iproute2） | 端口监控 | 端口模块不可用 | `sudo apt install -y iproute2` |
-| `curl` | 健康检查 / 依赖安装 | 部分检查跳过 | `sudo apt install -y curl` |
-| **tmux** | **远程接管外部终端** | 接管按钮禁用 | `sudo apt install -y tmux` |
-| `wmctrl`/`xdotool`/`xprop` | 外部终端窗口控制 | 外部终端列表为空 | `sudo apt install -y wmctrl xdotool x11-utils` |
-| **ffmpeg** | **外部终端只读查看**（抓窗口画面） | 无法查看终端内容 | `sudo apt install -y ffmpeg` |
-| docker | Docker 模块 | 仅该模块不可用 | 见官方文档 |
-| `nvidia-smi` | GPU 监控 | 无 N 卡时属正常 | 显卡驱动自带 |
-| pywebview + GUI 后端 | 悬浮小屏 | 小屏不可用 | 见「悬浮小屏」小节 |
+```bash
+./scripts/deploy.sh upgrade                   # 备份 + 更新依赖/dist + 重启
+./scripts/deploy.sh upgrade --no-build        # 只更新后端依赖，不重建前端
+./scripts/deploy.sh backup                    # 备份 .env + db + .ssh_key
+./scripts/deploy.sh restore <archive>         # 恢复备份并重启
+./scripts/deploy.sh verify                    # 校验 venv 依赖 + dist 资源 + 运行状态
+./scripts/deploy.sh uninstall                 # 移除 systemd/自启/logrotate，保留数据
+./scripts/deploy.sh uninstall --purge         # 连数据一起删（二次确认）
+./scripts/deploy.sh uninstall --remove-files  # 额外删 .venv / node_modules / dist
+```
 
-服务**运行本身不需要 sudo**；sudo 仅用于安装依赖与配置防火墙。
+`uninstall` 默认**不删项目、不删 `data/`、不删 `backend/.env`**；Docker 组和 UFW 规则也不会自动回滚，只打印手动命令。
 
-### 部署产生的配置
+> 旧 `setup.sh` / `start.sh` 已合并进 `deploy.sh`，不需要再单独运行。
+> `p0-setup.sh` / `p1-setup.sh` 是内部阶段脚本，正常部署不要手动调用。
 
-`~/.config/deckpit.env`（权限 600，由 setup.sh 生成）：
+### 系统准备
+
+`deploy.sh` 不负责安装 apt 包；先装好这些（Ubuntu 22.04）：
+
+```bash
+sudo apt update
+sudo apt install -y \
+  python3 python3-venv python3-pip \
+  iproute2 curl ca-certificates util-linux \
+  tmux wmctrl xdotool x11-utils ffmpeg sshpass \
+  policykit-1 ufw mesa-utils \
+  python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
+```
+
+Ubuntu 24.04 把 `gir1.2-webkit2-4.0` 换成 `gir1.2-webkit2-4.1`。
+
+Python 环境管理用 [uv](https://astral.sh/uv)：
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Node >= 18 只在需要构建 `frontend/dist` 时需要；如果已有 dist，或者使用离线包，目标机器不需要 Node。
+
+服务**运行本身不需要 sudo**；sudo 只用于装依赖、配防火墙、开启 linger、写 logrotate。
+
+### 离线部署
+
+在联网机器上打离线包：
+
+```bash
+./scripts/deploy.sh bundle
+# 或指定输出
+./scripts/deploy.sh bundle --output release/deckpit-offline.tar.gz
+```
+
+包内包含：后端源码、`frontend/dist`、`vendor/wheels`、脚本和 `OFFLINE-README.md`；不包含 `.env`、`data/`、密钥。
+
+目标机器（预装 Python >= 3.10 + 上面的系统包）解压后：
+
+```bash
+tar xzf deckpit-offline-*.tar.gz
+cd deckpit
+./scripts/deploy.sh --offline
+```
+
+`--offline` 用 `vendor/wheels` 建 venv、直接使用包内 dist，不联网、不跑 npm。wheelhouse 与构建机器的 OS / 架构 / Python 小版本绑定，目标机最好同为 Ubuntu x86_64 + 相同 Python 版本。
+
+### 日常管理
+
+```bash
+./scripts/deckpit.sh status
+./scripts/deckpit.sh start
+./scripts/deckpit.sh stop
+./scripts/deckpit.sh restart
+./scripts/deckpit.sh logs -f
+./scripts/deckpit.sh doctor
+./scripts/deckpit.sh palette start|stop|status
+```
+
+`status` 返回码：`0` 运行、`3` 停止、`4` 异常（端口在监听但 `/api/health` 不可用）。
+
+### 脚本说明
+
+| 脚本 | 用途 | 需要手动跑吗 |
+|------|------|--------------|
+| `scripts/deploy.sh` | 唯一部署入口：安装/升级/备份/恢复/卸载/离线包/校验 | **是，正常只用它** |
+| `scripts/deckpit.sh` | 日常启停、状态、日志、doctor、小屏 | 是 |
+| `scripts/p0-setup.sh` | P0 阶段：口令/权限/Docker/UFW | 内部，deploy 调用 |
+| `scripts/p1-setup.sh` | P1 阶段：systemd/linger/历史/小屏自启 | 内部，deploy 调用 |
+| `scripts/run-prod.sh` | 生产后端启动（托管 dist） | 内部，deckpit 调用 |
+| `scripts/start-palette.sh` | 悬浮小屏启动 | 内部/自启调用 |
+| `scripts/fix-docker-perms.sh` | Docker socket/组修复 | 内部，P0 调用 |
+| `scripts/quickpalette.py` | 悬浮小屏宿主 | 不直接跑 |
+
+### 配置文件
+
+部署配置统一在 `backend/.env`（权限 600）：
 
 ```bash
 DASH_HOST=0.0.0.0
 DASH_PORT=8787
 DASH_AUTH_USER=admin
-DASH_AUTH_PASSWORD=自动生成的强口令
+DASH_AUTH_PASSWORD=你的口令
 ```
 
-## 快速开始
+说明：
 
-### 环境要求
-
-- Ubuntu 22.04（GNOME 桌面，外部终端控制功能依赖 X11）
-- Python 3.11+，Node.js 20+（nvm 管理）
-- 可选：NVIDIA 显卡 + 驱动（GPU 监控）、Docker（Docker 模块）、tmux、wmctrl + xdotool（外部终端控制）
-
-### 1. 安装依赖
-
-```bash
-# 一键预检 + 自动补齐（推荐新机器先跑这个）
-./scripts/check-env.sh            # 检查缺什么，输出 PASS/WARN/FAIL 和安装命令
-./scripts/check-env.sh --fix      # 自动补齐 venv / pip 依赖 / 前端 dist（sudo apt 部分需手动）
-```
-
-手动安装等价命令：
-
-```bash
-# 后端
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 前端
-cd ../frontend
-npm install
-```
-
-### 2. 开发模式
-
-```bash
-./scripts/dev.sh
-```
-
-同时启动：后端 `uvicorn main:app --reload`（:8787）+ 前端 Vite（:5173，`/api`、`/ws` 已代理到 8787）。
-访问 `http://localhost:5173`。
-
-### 3. 生产模式
-
-```bash
-./scripts/start.sh
-```
-
-构建前端 dist 并由后端静态托管，单端口 `http://localhost:8787` 运行；从其他机器访问请用 `http://<本机内网IP>:8787`（需先设置 `DASH_AUTH_PASSWORD`，见[局域网 / 远程访问](#局域网--远程访问)）。
-
-### 4. 悬浮小屏（可选）
-
-```bash
-DASH_PALETTE=1 ./scripts/dev.sh     # 或 start.sh
-```
-
-或单独运行：
-
-```bash
-python scripts/quickpalette.py
-```
-
-快捷键 `Ctrl+Shift+Space` 切换显示（依赖 pynput，可选）。
-
-### 5. 开机自启（systemd user service）
-
-unit 由 `scripts/setup.sh` 第 5 步按实际安装路径生成并写入 `~/.config/systemd/user/deckpit.service`
-（路径含空格会自动转义，无需手工修改）：
-
-```bash
-./scripts/setup.sh              # 交互式，走到「5. 开机自启」选 Y
-DASH_SETUP_YES=1 ./scripts/setup.sh   # 非交互：全部采用推荐默认值
-```
-
-常用命令：
-
-```bash
-systemctl --user status deckpit
-systemctl --user restart deckpit
-journalctl --user -u deckpit -f   # 查看日志
-```
-
-注销后仍需保持运行（服务器场景）：`sudo loginctl enable-linger $USER`
+- `DASH_AUTH_PASSWORD_HASH` 优先级高于明文，二选一；
+- 本机 `127.0.0.1` 默认免登录（`DASH_AUTH_LOCAL_BYPASS=1`）；
+- 局域网访问必须登录；
+- 同一台机器挂反向代理时，把 `DASH_AUTH_LOCAL_BYPASS=0`，否则所有请求都会被当作本机放行；
+- 修改后需要 `./scripts/deckpit.sh restart`。
 
 ## 项目结构
 
@@ -300,7 +307,7 @@ Deckpit/
 │   ├── main.py               # FastAPI 入口：路由注册·预置数据·后台任务·SPA 托管
 │   ├── auth.py               #   远程访问认证：按来源判定 + 口令校验 + 会话 + ASGI 中间件
 │   ├── config.py             # 全局配置（端口/采样间隔/回滚行数等，环境变量可覆盖）
-│   ├── database.py           # SQLite 连接与 14 张表建表迁移
+│   ├── database.py           # SQLite 连接与 19 张表建表迁移
 │   ├── routers/              # 10 个 REST 路由模块
 │   │   ├── commands.py       #   命令手册 + 终端历史
 │   │   ├── files.py          #   文件管理 + 书签/模板/Nautilus 窗口
@@ -335,13 +342,17 @@ Deckpit/
 │       ├── api/              # axios 封装 + WS 客户端 + AI 流式
 │       └── router/           # 路由配置
 ├── scripts/
-│   ├── dev.sh               # 开发模式（前后端并行）
-│   ├── start.sh             # 生产模式（构建+托管，端口预检）
-│   └── quickpalette.py      # 悬浮小屏宿主（pywebview+托盘+吸附）
+│   ├── deploy.sh            # 唯一部署入口：安装/升级/备份/恢复/卸载/离线包/校验
+│   ├── deckpit.sh           # 日常启停/状态/日志/doctor/小屏
+│   ├── p0-setup.sh          # 内部阶段：口令/权限/Docker/UFW
+│   ├── p1-setup.sh          # 内部阶段：systemd/linger/历史/小屏自启
+│   ├── run-prod.sh          # 内部：生产后端启动（托管 dist）
+│   ├── start-palette.sh     # 内部：悬浮小屏启动
+│   ├── fix-docker-perms.sh  # 内部：Docker socket/组修复
+│   └── quickpalette.py      # 悬浮小屏宿主
 ├── data/
-│   └── dashboard.db         # SQLite 数据库
-├── PRD-v1.md                # 需求基线（M0–M9，92 条 FR）
-└── TECH-PLAN.md             # 技术方案（架构/API/数据模型/风险）
+│   └── dashboard.db         # SQLite 数据库（运行时生成）
+└── README.md                # 用户文档
 ```
 
 ## API 概览
@@ -384,7 +395,7 @@ WebSocket 端点：
 ### AI 助手配置
 
 1. 本地模型（推荐）：先启动 Ollama / vLLM，确认有 OpenAI-compatible 的 `/v1` 接口。
-2. 在 `~/.config/deckpit.env` 或页面「AI 助手 → 设置」里填：
+2. 在 `backend/.env` 或页面「AI 助手 → 设置」里填：
 
 ```bash
 DASH_AI_BASE_URL=http://127.0.0.1:11434/v1
@@ -417,10 +428,18 @@ cd ../frontend && npm run build
 
 ### 开启远程登录
 
+编辑 `backend/.env`：
+
 ```bash
-DASH_AUTH_PASSWORD='你的强密码' ./scripts/run-prod.sh
-# 自定义用户名：DASH_AUTH_USER=dev DASH_AUTH_PASSWORD=xxx ./scripts/run-prod.sh
-# 不想用明文：DASH_AUTH_PASSWORD_HASH=$(echo -n '密码' | sha256sum | awk '{print $1}')
+DASH_AUTH_USER=admin
+DASH_AUTH_PASSWORD='你的强密码'
+# 不想用明文：DASH_AUTH_PASSWORD_HASH=$(printf '%s' '密码' | sha256sum | awk '{print $1}')
+```
+
+然后重启：
+
+```bash
+./scripts/deckpit.sh restart
 ```
 
 启动后会打印可访问地址：
@@ -433,10 +452,10 @@ DASH_AUTH_PASSWORD='你的强密码' ./scripts/run-prod.sh
 
 **未设置口令时，非本机访问一律返回 403（fail-closed）**，不会出现"已开放但无口令"的窗口期。
 
-只想退回纯本机访问：
+只想退回纯本机访问：把 `backend/.env` 的 `DASH_HOST` 改为 `127.0.0.1`，然后：
 
 ```bash
-DASH_HOST=127.0.0.1 ./scripts/run-prod.sh
+./scripts/deckpit.sh restart
 ```
 
 ### 防火墙（建议只放行内网段）
@@ -465,7 +484,7 @@ sudo ufw status
 - 会话保存在**服务端内存**，服务重启后所有远程客户端需重新登录。
 - 认证 Cookie 为 `HttpOnly` + `SameSite=Lax`，前端静态资源放行以便未登录时能渲染登录页；真正受保护的是 `/api/*`（除 `/api/auth/*`）、`/ws/*`、`/docs`、`/openapi.json`。
 - 未登录的 WebSocket 握手会被以 `1008` 关闭，前端据此停止重连并跳转登录页。
-- `DASH_TRUST_PROXY=1` 时伪造 `X-Forwarded-For: 127.0.0.1` 即可绕过认证，**仅在你确实挂了可信反向代理时才开启**（开发模式由 `scripts/dev.sh` 自动开启，因为请求经 Vite 代理转发，后端本身仍只监听 `127.0.0.1`）。
+- `DASH_TRUST_PROXY=1` 时伪造 `X-Forwarded-For: 127.0.0.1` 即可绕过认证，**仅在你确实挂了可信反向代理时才开启**。
 - 传输为明文 HTTP，跨公网使用请在前面套一层 HTTPS 反向代理。
 
 ## 让终端命令实时进入历史
@@ -492,13 +511,15 @@ PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 setopt INC_APPEND_HISTORY      # 每条命令执行后立即写入；共享多终端可用 SHARE_HISTORY
 ```
 
-之后后台任务会按 `DASH_HISTORY_SYNC_INTERVAL`（默认 5 秒）增量读取，想更接近实时就调小：
+之后后台任务会按 `DASH_HISTORY_SYNC_INTERVAL`（默认 5 秒）增量读取，想更接近实时就调小。改 `backend/.env`：
 
 ```bash
-DASH_HISTORY_SYNC_INTERVAL=1 ./scripts/start.sh        # 1 秒一轮
-DASH_HISTORY_GLOBAL=1 ./scripts/start.sh               # 顺带同步 /home/* 下其他用户的历史（需有读权限）
-DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史文件时最多导入多少条
+DASH_HISTORY_SYNC_INTERVAL=1
+DASH_HISTORY_GLOBAL=0
+DASH_HISTORY_MAX_ENTRIES=500
 ```
+
+然后 `./scripts/deckpit.sh restart`。也可以在「命令手册 → 终端历史 → 收录设置」里直接改同步间隔并保存。
 
 说明：
 
@@ -552,15 +573,16 @@ DASH_HISTORY_MAX_ENTRIES=500 ./scripts/start.sh        # 首次遇到某历史�
 - 外部终端窗口控制（wmctrl/xdotool）与悬浮小屏吸附依赖 X11，Wayland 下不可用
 - GPU 监控仅支持 NVIDIA（pynvml / nvidia-smi）
 - 远程主机管理未做——SSH 模块仅"发起连接"，不是远端面板
-- systemd 用户服务需由 `scripts/setup.sh` 安装（它会按实际路径生成 unit）；手动迁移目录后需重跑 setup
+- systemd 用户服务由 `./scripts/deploy.sh` / `./scripts/p1-setup.sh` 安装；手动迁移目录后需重跑 P1
 - 远程登录会话保存在服务端内存，服务重启后远程客户端需重新登录
 - AI 助手需要单独配置模型；未配置时入口可用但只提示“未配置模型”，不影响主应用
 - 服务运行状态保存在后端内存，后端重启后需重新查询/启动；AI 回答会标注状态来源
 - 如果服务端口在监听但不是面板启动的进程，AI 会拒绝 stop/restart（无法安全接管外部进程）
 - AI 的 Compose 动作用 `stop` 而不是 `down`（避免移除容器）；不会执行 `rm` / `prune` / `kill`
 - AI 会话、动作审计保存在 SQLite；模型上下文里不含 SSH 密码、`.env` 原值和 API Key
+- 终端输出文本镜像尚未接入 UI；`backend/services/terminal_log.py` 暂为未使用代码
 
 ## 文档
 
-- [PRD-v1.md](PRD-v1.md) — 需求基线：M0–M9 模块、92 条 FR、优先级与里程碑
-- [TECH-PLAN.md](TECH-PLAN.md) — 技术方案：选型决策、架构、API 设计、数据模型、风险应对
+- 本 `README.md` 是面向最终用户的唯一部署/使用文档。
+- 内部设计、评审、排错清单不随用户发布追踪；需要时由维护者本地保留。

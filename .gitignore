@@ -2,10 +2,13 @@
 .env
 .env.local
 backend/.env
+backend/.env.bak.*
+*.env.bak.*
 __pycache__/
 */__pycache__/
 frontend/node_modules/
 frontend/dist/
+.npm-cache/
 reasonix.toml
 
 # 本机运行数据 / 密钥，不要上传
@@ -14,6 +17,15 @@ data/dashboard.db
 data/logs/
 data/*.db-wal
 data/*.db-shm
+data/*.pid
 
 # 临时调试产物
 .tmp-*
+
+# 内部文档 / 开发者脚本，不随用户发布追踪
+PRD-v1.md
+TECH-PLAN.md
+docs/
+scripts/dev.sh
+scripts/check-env.sh
+.pytest_cache/

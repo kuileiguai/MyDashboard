@@ -109,7 +109,8 @@
     </el-dialog>
 
     <!-- Terminal History Dialog -->
-    <el-dialog v-model="showHistory" title="终端历史" width="860px" @opened="onHistoryOpened">
+    <el-dialog v-model="showHistory" title="终端历史" width="860px"
+      @opened="onHistoryOpened" @closed="onHistoryClosed">
       <div class="hist-toolbar">
         <el-button size="small" type="primary" @click="importShellHistory" :loading="shellLoading">
           <el-icon><Download /></el-icon> 从 shell 历史导入
@@ -127,6 +128,10 @@
         <el-input-number v-model="historyCfg.max_entries" :min="1" :max="100000" size="small"
           controls-position="right" class="cfg-num" />
         <span class="tip">条</span>
+        <span class="tip">同步间隔</span>
+        <el-input-number v-model="historyCfg.interval" :min="1" :max="3600" size="small"
+          controls-position="right" class="cfg-num" />
+        <span class="tip">秒</span>
         <el-checkbox v-model="historyCfg.global" size="small">同步 /home/* 所有用户</el-checkbox>
         <el-button size="small" @click="saveHistoryCfg">保存</el-button>
         <el-button size="small" type="warning" @click="doRescan" :loading="rescanLoading">
@@ -230,7 +235,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
@@ -264,6 +269,7 @@ const editId = ref(null)
 const historyCfg = ref({ max_entries: 5000, global: false, interval: 5, total: 0 })
 const rescanLoading = ref(false)
 const shellLoading = ref(false)
+let historyPollTimer = null
 
 // 转存弹窗
 const convertVisible = ref(false)
@@ -347,6 +353,7 @@ async function saveHistoryCfg() {
     const { data } = await api.post('/commands/history/config', {
       max_entries: historyCfg.value.max_entries,
       history_global: !!historyCfg.value.global,
+      interval: historyCfg.value.interval,
     })
     historyCfg.value = { ...historyCfg.value, ...data }
     ElMessage.success('收录设置已保存（后台下一轮即生效）')
@@ -386,10 +393,28 @@ async function importShellHistory() {
   shellLoading.value = false
 }
 
+function stopHistoryPoll() {
+  if (historyPollTimer) {
+    clearInterval(historyPollTimer)
+    historyPollTimer = null
+  }
+}
+
 function onHistoryOpened() {
   fetchHistory()
   fetchHistoryConfig()
+  stopHistoryPoll()
+  // 弹窗打开时每 2 秒刷新一次，配合后端 1 秒同步接近实时
+  historyPollTimer = setInterval(() => {
+    if (!historyLoading.value) fetchHistory()
+  }, 2000)
 }
+
+function onHistoryClosed() {
+  stopHistoryPoll()
+}
+
+onUnmounted(stopHistoryPoll)
 
 function sourceLabel(source) {
   return { terminal: '面板终端', external: '外部终端', shell: 'shell历史', command: '手册发送' }[source] || source || '终端'

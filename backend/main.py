@@ -1,11 +1,12 @@
 """FastAPI 入口"""
 
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
@@ -13,6 +14,8 @@ from auth import AuthMiddleware, router as auth_router
 from routers import commands, files, ports, terminal, system, logs, env, ssh, dashboard, docker
 from routers import ai as ai_router
 from ws import terminal_ws, monitor_ws, log_ws
+
+START_TIME = time.time()
 
 
 @asynccontextmanager
@@ -78,6 +81,13 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
+    # 回收所有 PTY 子进程，避免 Ctrl+C / systemd stop 之后留下 shell
+    try:
+        from services.pty_manager import pty_manager
+        pty_manager.kill_all()
+    except Exception as e:
+        print(f"[警告] PTY 回收失败: {e}", flush=True)
+
 
 app = FastAPI(title="Deckpit", version="1.0.0", lifespan=lifespan)
 
@@ -111,6 +121,28 @@ app.include_router(ai_router.router, prefix="/api/ai", tags=["M11-AI"])
 app.websocket("/ws/terminal/{session_id}")(terminal_ws.websocket_endpoint)
 app.websocket("/ws/system/monitor")(monitor_ws.websocket_endpoint)
 app.websocket("/ws/logs/tail")(log_ws.websocket_endpoint)
+
+
+@app.get("/api/health", tags=["Health"])
+async def health():
+    """供启动脚本/探针使用的最小健康检查；不含配置与敏感信息。"""
+    db_ok = True
+    try:
+        from database import get_db
+        async with get_db() as db:
+            await db.execute_fetchall("SELECT 1")
+    except Exception:
+        db_ok = False
+    return JSONResponse(
+        status_code=200 if db_ok else 503,
+        content={
+            "ok": db_ok,
+            "version": app.version,
+            "uptime": round(time.time() - START_TIME, 1),
+            "db": "ok" if db_ok else "error",
+        },
+    )
+
 
 # 生产环境：托管前端 dist（SPA fallback：非文件路径回退 index.html）
 dist_path = Path(__file__).parent.parent / "frontend" / "dist"

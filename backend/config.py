@@ -142,7 +142,7 @@ LOG_DIR = Path(_str("DASH_LOG_DIR", str(DB_DIR / "logs"))).expanduser()
 
 # ── 远程访问认证（非本机来源需登录；本机来源默认免登录）────────────
 AUTH_USER = _str("DASH_AUTH_USER", "admin")
-AUTH_PASSWORD = _str("DASH_AUTH_PASSWORD", "Kamfu@2026")  # 明文，启动时转为摘要
+AUTH_PASSWORD = _str("DASH_AUTH_PASSWORD", "")  # 明文，启动时转为摘要；空 = 非本机访问 fail-closed
 AUTH_PASSWORD_HASH = _str("DASH_AUTH_PASSWORD_HASH", "")   # 直接给 sha256 摘要，优先级更高
 AUTH_SESSION_TTL = _int("DASH_AUTH_SESSION_TTL", 12 * 3600)  # 会话有效期 (s)
 AUTH_LOCAL_BYPASS = _bool("DASH_AUTH_LOCAL_BYPASS", True)   # 本机来源免登录

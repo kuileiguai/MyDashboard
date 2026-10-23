@@ -203,6 +203,9 @@ _DOCS_PATHS = ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect")
 
 def _needs_auth(path: str) -> bool:
     """仅保护数据面；静态资源放行以便前端能渲染登录页"""
+    # 健康检查只返回 ok/version/uptime/db，不放行数据面
+    if path.rstrip("/") == "/api/health":
+        return False
     if path.startswith("/api/auth/"):
         return False
     if path.startswith(_PROTECTED_PREFIXES):
